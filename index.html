@@ -8,6 +8,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Trinh's Planner" />
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
 <link rel="manifest" href="manifest.json" />
 <style>
   html, body { margin: 0; padding: 0; background: #F3E7D6; -webkit-tap-highlight-color: transparent; }
@@ -168,6 +171,174 @@ function migrateDayEntry(entry) {
   return { breakfast: entry?.breakfast || [], lunch: entry?.lunch || [], dinner: entry?.dinner || [] };
 }
 
+// ---------- ingredient text / recipe-site import helpers ----------
+const FRACTION_MAP = {
+  "¼": "1/4", "½": "1/2", "¾": "3/4", "⅓": "1/3", "⅔": "2/3",
+  "⅕": "1/5", "⅖": "2/5", "⅗": "3/5", "⅘": "4/5",
+  "⅙": "1/6", "⅚": "5/6", "⅛": "1/8", "⅜": "3/8", "⅝": "5/8", "⅞": "7/8",
+};
+const UNIT_ALIASES = {
+  cups: "cup", cup: "cup", c: "cup",
+  tablespoons: "tbsp", tablespoon: "tbsp", tbsp: "tbsp", tbsps: "tbsp",
+  teaspoons: "tsp", teaspoon: "tsp", tsp: "tsp", tsps: "tsp",
+  ounces: "oz", ounce: "oz", oz: "oz",
+  pounds: "lb", pound: "lb", lbs: "lb", lb: "lb",
+  grams: "g", gram: "g", g: "g",
+  kilograms: "kg", kilogram: "kg", kg: "kg",
+  milliliters: "ml", milliliter: "ml", ml: "ml",
+  liters: "l", liter: "l", l: "l",
+  cloves: "clove", clove: "clove",
+  cans: "can", can: "can",
+  pinches: "pinch", pinch: "pinch",
+  whole: "whole",
+};
+const UNIT_REGEX = new RegExp("^(" + Object.keys(UNIT_ALIASES).sort((a, b) => b.length - a.length).join("|") + ")\\b\\.?", "i");
+
+function decodeHtmlEntities(str) {
+  const el = document.createElement("textarea");
+  el.innerHTML = str;
+  return el.value;
+}
+
+function parseIngredientLine(rawLine) {
+  let line = String(rawLine || "").trim().replace(/^[•\-*–\u2022]\s*/, "");
+  Object.entries(FRACTION_MAP).forEach(([sym, frac]) => {
+    line = line.split(sym).join(" " + frac + " ");
+  });
+  line = line.replace(/\s+/g, " ").trim();
+
+  let qty = "";
+  const qtyMatch = line.match(/^(\d+\s+\d+\/\d+|\d+\/\d+|\d+(\.\d+)?)/);
+  let rest = line;
+  if (qtyMatch) {
+    qty = qtyMatch[0].trim();
+    rest = line.slice(qtyMatch[0].length).trim();
+  }
+
+  let unit = "";
+  const unitMatch = rest.match(UNIT_REGEX);
+  if (unitMatch) {
+    unit = UNIT_ALIASES[unitMatch[1].toLowerCase()] || "";
+    rest = rest.slice(unitMatch[0].length).trim().replace(/^of\s+/i, "");
+  }
+
+  return { qty, unit, name: rest };
+}
+
+function parseIngredientText(text) {
+  return text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map(parseIngredientLine);
+}
+
+function guessCategory(name) {
+  const n = (name || "").toLowerCase();
+  const rules = [
+    [/chicken|beef|pork|turkey|bacon|sausage|shrimp|salmon|fish|steak|lamb|ham\b/, "Meat & seafood"],
+    [/milk|cheese|butter|\begg|eggs\b|yogurt|cream/, "Dairy & eggs"],
+    [/onion|garlic|tomato|pepper|lettuce|carrot|potato|lemon|lime|spinach|basil|cilantro|parsley|herb|cucumber|zucchini|mushroom|avocado|apple|banana|celery|ginger/, "Produce"],
+    [/flour|sugar|salt|\boil\b|rice|pasta|broth|stock|vinegar|beans|lentil|honey|syrup|baking (soda|powder)/, "Pantry"],
+    [/bread|bun|tortilla|bagel|roll\b/, "Bakery"],
+    [/cinnamon|cumin|paprika|oregano|thyme|chili flakes|spice|vanilla|nutmeg|clove\b/, "Spices & condiments"],
+    [/wine|beer|juice|soda|sparkling water/, "Beverages"],
+  ];
+  for (const [re, cat] of rules) {
+    if (re.test(n)) return cat;
+  }
+  return "Other";
+}
+
+function extractJsonLdRecipe(html) {
+  const scriptRegex = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  const roots = [];
+  let m;
+  while ((m = scriptRegex.exec(html))) {
+    try {
+      roots.push(JSON.parse(m[1].trim()));
+    } catch (e) {
+      // some pages emit slightly malformed JSON-LD - skip it
+    }
+  }
+  function* walk(node) {
+    if (Array.isArray(node)) {
+      for (const n of node) yield* walk(n);
+    } else if (node && typeof node === "object") {
+      yield node;
+      if (node["@graph"]) yield* walk(node["@graph"]);
+    }
+  }
+  for (const root of roots) {
+    for (const node of walk(root)) {
+      const type = node["@type"];
+      const isRecipe = type === "Recipe" || (Array.isArray(type) && type.includes("Recipe"));
+      if (isRecipe) return node;
+    }
+  }
+  return null;
+}
+
+function jsonLdToRecipeDraft(node) {
+  const name = decodeHtmlEntities(String(node.name || "")).trim();
+  let servings = "";
+  if (node.recipeYield) {
+    const y = Array.isArray(node.recipeYield) ? node.recipeYield[0] : node.recipeYield;
+    const found = String(y).match(/\d+/);
+    if (found) servings = found[0];
+  }
+  let instructionsText = "";
+  if (Array.isArray(node.recipeInstructions)) {
+    instructionsText = node.recipeInstructions
+      .map((step) => {
+        if (typeof step === "string") return step;
+        if (step && step.text) return step.text;
+        if (step && Array.isArray(step.itemListElement)) {
+          return step.itemListElement.map((s) => (typeof s === "string" ? s : s.text || "")).join("\n");
+        }
+        return "";
+      })
+      .filter(Boolean)
+      .map(decodeHtmlEntities)
+      .join("\n");
+  } else if (typeof node.recipeInstructions === "string") {
+    instructionsText = decodeHtmlEntities(node.recipeInstructions);
+  }
+  const rawIngredients = Array.isArray(node.recipeIngredient)
+    ? node.recipeIngredient
+    : Array.isArray(node.ingredients)
+    ? node.ingredients
+    : [];
+  const ingredients = rawIngredients.map((line) => parseIngredientLine(decodeHtmlEntities(String(line))));
+  return { name, servings, instructions: instructionsText.trim(), ingredients };
+}
+
+const CORS_PROXIES = [
+  (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+];
+async function fetchHtmlViaProxy(url) {
+  let lastErr;
+  for (const build of CORS_PROXIES) {
+    try {
+      const res = await fetch(build(url));
+      if (!res.ok) throw new Error("bad status " + res.status);
+      const text = await res.text();
+      if (text && text.length > 200) return text;
+      throw new Error("empty response");
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error("failed to fetch");
+}
+async function importRecipeFromUrl(url) {
+  const html = await fetchHtmlViaProxy(url);
+  const node = extractJsonLdRecipe(html);
+  if (!node) throw new Error("no-recipe-data");
+  return jsonLdToRecipeDraft(node);
+}
+
 // ---------- small UI atoms ----------
 function IconBook({ size = 22, color }) {
   return (
@@ -293,6 +464,52 @@ function RecipeForm({ initial, onSave, onCancel }) {
     initial?.ingredients?.length ? initial.ingredients : [{ id: uid(), name: "", qty: "", unit: "", category: "Other" }]
   );
   const [error, setError] = useState("");
+  const [importUrl, setImportUrl] = useState("");
+  const [importState, setImportState] = useState({ status: "idle", message: "" });
+  const [showPaste, setShowPaste] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+
+  async function handleFetchUrl() {
+    if (!importUrl.trim()) return;
+    setImportState({ status: "loading", message: "Fetching recipe…" });
+    try {
+      const draft = await importRecipeFromUrl(importUrl.trim());
+      if (draft.name) setName(draft.name);
+      if (draft.servings) setServings(draft.servings);
+      if (draft.instructions) setInstructions(draft.instructions);
+      if (draft.ingredients.length) {
+        setIngredients(
+          draft.ingredients.map((i) => ({ id: uid(), name: i.name, qty: i.qty, unit: i.unit, category: guessCategory(i.name) }))
+        );
+      }
+      setImportState({
+        status: "success",
+        message: `Imported ${draft.ingredients.length} ingredients — double-check quantities and units before saving.`,
+      });
+    } catch (e) {
+      setImportState({
+        status: "error",
+        message: "Couldn't import automatically from that link. Try pasting the ingredients below instead.",
+      });
+    }
+  }
+
+  function handlePasteParse() {
+    const parsed = parseIngredientText(pasteText).map((p) => ({
+      id: uid(),
+      name: p.name,
+      qty: p.qty,
+      unit: p.unit,
+      category: guessCategory(p.name),
+    }));
+    if (!parsed.length) return;
+    setIngredients((prev) => {
+      const isBlankDefault = prev.length === 1 && !prev[0].name;
+      return isBlankDefault ? parsed : [...prev, ...parsed];
+    });
+    setPasteText("");
+    setShowPaste(false);
+  }
 
   function updateIng(id, field, value) {
     setIngredients((prev) => prev.map((ing) => (ing.id === id ? { ...ing, [field]: value } : ing)));
@@ -371,6 +588,65 @@ function RecipeForm({ initial, onSave, onCancel }) {
           <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }}>
             <IconX color={C.inkSoft} />
           </button>
+        </div>
+
+        <div
+          style={{
+            background: C.paperDim,
+            borderRadius: 12,
+            padding: 12,
+            marginBottom: 16,
+          }}
+        >
+          <p style={{ fontSize: 12.5, fontWeight: 600, color: C.herbDeep, textTransform: "uppercase", letterSpacing: 0.4, margin: "0 0 8px" }}>
+            Import a recipe
+          </p>
+          <div style={{ display: "flex", gap: 6 }}>
+            <input
+              style={{ ...inputStyle, flex: 1, minWidth: 0, background: "#fff" }}
+              placeholder="Paste a recipe link"
+              value={importUrl}
+              onChange={(e) => setImportUrl(e.target.value)}
+            />
+            <Btn
+              variant="primary"
+              onClick={handleFetchUrl}
+              disabled={importState.status === "loading"}
+              style={{ padding: "9px 14px", opacity: importState.status === "loading" ? 0.6 : 1 }}
+            >
+              {importState.status === "loading" ? "Fetching…" : "Fetch"}
+            </Btn>
+          </div>
+          {importState.message && (
+            <p
+              style={{
+                fontSize: 12.5,
+                margin: "8px 0 0",
+                color: importState.status === "error" ? C.tomatoDeep : importState.status === "success" ? C.herbDeep : C.inkSoft,
+              }}
+            >
+              {importState.message}
+            </p>
+          )}
+          <button
+            onClick={() => setShowPaste((v) => !v)}
+            style={{ background: "none", border: "none", cursor: "pointer", padding: 0, marginTop: 9, fontSize: 12.5, color: C.herbDeep, fontFamily: sans, textDecoration: "underline" }}
+          >
+            {showPaste ? "Hide paste box" : "Or paste ingredients instead"}
+          </button>
+          {showPaste && (
+            <div style={{ marginTop: 8 }}>
+              <textarea
+                style={{ ...inputStyle, width: "100%", minHeight: 80, resize: "vertical", background: "#fff", fontFamily: sans }}
+                placeholder={"Paste ingredient lines, one per line:\n2 cups flour\n1/2 tsp salt\n3 eggs"}
+                value={pasteText}
+                onChange={(e) => setPasteText(e.target.value)}
+              />
+              <Btn variant="ghost" onClick={handlePasteParse} style={{ marginTop: 6 }}>
+                Add parsed ingredients
+              </Btn>
+            </div>
+          )}
         </div>
 
         <label style={labelStyle}>Recipe name</label>
