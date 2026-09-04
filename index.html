@@ -1,0 +1,1078 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<title>Trinh's Planner</title>
+<meta name="theme-color" content="#C9A788" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Trinh's Planner" />
+<link rel="manifest" href="manifest.json" />
+<style>
+  html, body { margin: 0; padding: 0; background: #F3E7D6; -webkit-tap-highlight-color: transparent; }
+  * { -webkit-text-size-adjust: 100%; }
+  input, select, textarea, button { font-size: 16px; } /* prevents iOS zoom-on-focus */
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo, useCallback } = React;
+
+// ---------- design tokens ----------
+const C = {
+  paper: "#F3E7D6",
+  paperDim: "#E9D6B7",
+  card: "#FFFCF6",
+  ink: "#4A3626",
+  inkSoft: "#8A7259",
+  line: "#DFC79E",
+  herb: "#8B5E3C",
+  herbDeep: "#6B4626",
+  tomato: "#C1442D",
+  tomatoDeep: "#9A331F",
+  butter: "#E8B94A",
+  butterDeep: "#8A6217",
+  bearFur: "#C9A788",
+  bearFurDeep: "#B08D63",
+  bearFurLight: "#E3C9A4",
+  bearMuzzle: "#F1DFC2",
+  bearBlush: "#E8A98B",
+};
+
+const serif = "'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif";
+const sans = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+
+const UNITS = ["", "g", "kg", "ml", "l", "tsp", "tbsp", "cup", "oz", "lb", "clove", "can", "pinch", "whole"];
+const CATEGORIES = ["Produce", "Meat & seafood", "Dairy & eggs", "Bakery", "Frozen", "Pantry", "Spices & condiments", "Beverages", "Other"];
+const MEALS = [
+  { id: "breakfast", label: "Breakfast" },
+  { id: "lunch", label: "Lunch" },
+  { id: "dinner", label: "Dinner" },
+];
+
+// ---------- date helpers ----------
+function toISO(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+function addDays(d, n) {
+  const nd = new Date(d);
+  nd.setDate(nd.getDate() + n);
+  return nd;
+}
+function getMonday(d) {
+  const nd = new Date(d);
+  const day = nd.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  nd.setDate(nd.getDate() + diff);
+  nd.setHours(0, 0, 0, 0);
+  return nd;
+}
+function fmtDay(d) {
+  return d.toLocaleDateString(undefined, { weekday: "short" });
+}
+function fmtDate(d) {
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+function uid() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+// ---------- quantity helpers (support fractions like "1 1/2", "3/4") ----------
+function parseQty(str) {
+  if (!str) return NaN;
+  const parts = String(str).trim().split(/\s+/);
+  let total = 0;
+  let found = false;
+  for (const p of parts) {
+    if (p.includes("/")) {
+      const [n, d] = p.split("/").map(Number);
+      if (d) {
+        total += n / d;
+        found = true;
+      }
+    } else {
+      const v = parseFloat(p);
+      if (!isNaN(v)) {
+        total += v;
+        found = true;
+      }
+    }
+  }
+  return found ? total : NaN;
+}
+const NICE_FRACTIONS = [
+  [0, ""], [0.125, "\u215b"], [0.25, "\u00bc"], [0.333, "\u2153"], [0.375, "\u215c"],
+  [0.5, "\u00bd"], [0.625, "\u215d"], [0.667, "\u2154"], [0.75, "\u00be"], [0.875, "\u215e"], [1, ""],
+];
+function formatQty(n) {
+  if (n == null || isNaN(n)) return "";
+  const rounded = Math.round(n * 1000) / 1000;
+  let whole = Math.floor(rounded);
+  const frac = rounded - whole;
+  let best = NICE_FRACTIONS[0];
+  let bestDiff = Infinity;
+  for (const pair of NICE_FRACTIONS) {
+    const diff = Math.abs(frac - pair[0]);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = pair;
+    }
+  }
+  let symbol = best[1];
+  if (best[0] === 1) {
+    whole += 1;
+    symbol = "";
+  }
+  if (whole === 0 && symbol) return symbol;
+  if (symbol) return `${whole} ${symbol}`;
+  return `${whole}`;
+}
+
+// ---------- storage helpers (plain browser localStorage - private to this device) ----------
+const STORAGE_PREFIX = "trinhs-planner:";
+async function loadKey(key, fallback) {
+  try {
+    const raw = localStorage.getItem(STORAGE_PREFIX + key);
+    return raw != null ? JSON.parse(raw) : fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+async function saveKey(key, value) {
+  try {
+    localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
+  } catch (e) {
+    console.error("storage save failed", key, e);
+  }
+}
+
+// ---------- migration helpers ----------
+function migrateRecipe(r) {
+  return {
+    ...r,
+    ingredients: (r.ingredients || []).map((i) => ({ ...i, category: i.category || "Other" })),
+  };
+}
+function migrateDayEntry(entry) {
+  if (Array.isArray(entry)) {
+    return { breakfast: [], lunch: [], dinner: entry };
+  }
+  return { breakfast: entry?.breakfast || [], lunch: entry?.lunch || [], dinner: entry?.dinner || [] };
+}
+
+// ---------- small UI atoms ----------
+function IconBook({ size = 22, color }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.6">
+      <path d="M4 5.5C4 4.67 4.67 4 5.5 4H12v16H5.5A1.5 1.5 0 0 1 4 18.5v-13Z" />
+      <path d="M20 5.5c0-.83-.67-1.5-1.5-1.5H12v16h6.5c.83 0 1.5-.67 1.5-1.5v-13Z" />
+    </svg>
+  );
+}
+function IconMenuList({ size = 22, color }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.6">
+      <circle cx="5" cy="6" r="1.4" fill={color} stroke="none" />
+      <circle cx="5" cy="12" r="1.4" fill={color} stroke="none" />
+      <circle cx="5" cy="18" r="1.4" fill={color} stroke="none" />
+      <path d="M9.5 6h9M9.5 12h9M9.5 18h9" strokeLinecap="round" />
+    </svg>
+  );
+}
+function IconCalendar({ size = 22, color }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.6">
+      <rect x="3.5" y="5" width="17" height="15" rx="2" />
+      <path d="M3.5 9.5h17M8 3v4M16 3v4" strokeLinecap="round" />
+    </svg>
+  );
+}
+function IconCart({ size = 22, color }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.6">
+      <path d="M3 4h2l2.2 11.2a2 2 0 0 0 2 1.6h7.1a2 2 0 0 0 2-1.6L20 8H6.2" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="9.5" cy="20" r="1.3" fill={color} stroke="none" />
+      <circle cx="17" cy="20" r="1.3" fill={color} stroke="none" />
+    </svg>
+  );
+}
+function IconPlus({ size = 20, color }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+      <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+    </svg>
+  );
+}
+function IconX({ size = 18, color }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+      <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
+    </svg>
+  );
+}
+function IconStar({ size = 18, color, filled }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? color : "none"} stroke={color} strokeWidth="1.6">
+      <path d="M12 3.5l2.6 5.3 5.8.85-4.2 4.1 1 5.8L12 16.8l-5.2 2.75 1-5.8-4.2-4.1 5.8-.85L12 3.5Z" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function IconCheck({ size = 16, color }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.4">
+      <path d="M4 12l5.5 5.5L20 6.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function BearIllustration({ width = 150 }) {
+  return (
+    <svg width={width} height={width} viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="46" cy="56" r="26" fill={C.bearFur} stroke={C.herbDeep} strokeWidth="3" />
+      <circle cx="154" cy="56" r="26" fill={C.bearFur} stroke={C.herbDeep} strokeWidth="3" />
+      <circle cx="46" cy="57" r="11" fill={C.bearFurLight} />
+      <circle cx="154" cy="57" r="11" fill={C.bearFurLight} />
+      <circle cx="100" cy="108" r="72" fill={C.bearFur} stroke={C.herbDeep} strokeWidth="3" />
+      <circle cx="72" cy="102" r="6" fill={C.herbDeep} />
+      <circle cx="128" cy="102" r="6" fill={C.herbDeep} />
+      <circle cx="60" cy="122" r="9" fill={C.bearBlush} opacity="0.7" />
+      <circle cx="140" cy="122" r="9" fill={C.bearBlush} opacity="0.7" />
+      <ellipse cx="100" cy="128" rx="20" ry="14" fill={C.bearMuzzle} />
+      <ellipse cx="100" cy="122" rx="6" ry="4.5" fill={C.herbDeep} />
+    </svg>
+  );
+}
+
+function Btn({ children, onClick, variant = "ghost", style, ...rest }) {
+  const base = {
+    fontFamily: sans,
+    fontSize: 14,
+    fontWeight: 500,
+    padding: "10px 16px",
+    borderRadius: 999,
+    cursor: "pointer",
+    border: "none",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    transition: "opacity .12s",
+  };
+  const variants = {
+    primary: { background: C.herb, color: "#fff", boxShadow: "0 2px 8px rgba(107,70,38,0.28)" },
+    tomato: { background: C.tomato, color: "#fff", boxShadow: "0 2px 8px rgba(154,51,31,0.25)" },
+    ghost: { background: C.paperDim, color: C.ink },
+    quiet: { background: "transparent", color: C.inkSoft, padding: "6px 4px" },
+  };
+  return (
+    <button
+      onClick={onClick}
+      style={{ ...base, ...variants[variant], ...style }}
+      onMouseDown={(e) => (e.currentTarget.style.opacity = "0.75")}
+      onMouseUp={(e) => (e.currentTarget.style.opacity = "1")}
+      {...rest}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ---------- Recipe Form ----------
+function RecipeForm({ initial, onSave, onCancel }) {
+  const [name, setName] = useState(initial?.name || "");
+  const [servings, setServings] = useState(initial?.servings || 4);
+  const [instructions, setInstructions] = useState(initial?.instructions || "");
+  const [ingredients, setIngredients] = useState(
+    initial?.ingredients?.length ? initial.ingredients : [{ id: uid(), name: "", qty: "", unit: "", category: "Other" }]
+  );
+  const [error, setError] = useState("");
+
+  function updateIng(id, field, value) {
+    setIngredients((prev) => prev.map((ing) => (ing.id === id ? { ...ing, [field]: value } : ing)));
+  }
+  function addIng() {
+    setIngredients((prev) => [...prev, { id: uid(), name: "", qty: "", unit: "", category: "Other" }]);
+  }
+  function removeIng(id) {
+    setIngredients((prev) => prev.filter((ing) => ing.id !== id));
+  }
+
+  function handleSave() {
+    if (!name.trim()) {
+      setError("Give the recipe a name first.");
+      return;
+    }
+    const cleanIngredients = ingredients
+      .map((i) => ({ ...i, name: i.name.trim() }))
+      .filter((i) => i.name);
+    if (cleanIngredients.length === 0) {
+      setError("Add at least one ingredient.");
+      return;
+    }
+    onSave({
+      id: initial?.id || uid(),
+      name: name.trim(),
+      servings: Number(servings) || 1,
+      instructions: instructions.trim(),
+      ingredients: cleanIngredients,
+    });
+  }
+
+  const labelStyle = { fontSize: 13, fontWeight: 500, color: C.inkSoft, marginBottom: 5, display: "block" };
+  const inputStyle = {
+    fontFamily: sans,
+    fontSize: 15,
+    padding: "9px 10px",
+    borderRadius: 7,
+    border: `1px solid ${C.line}`,
+    background: "#fff",
+    color: C.ink,
+    boxSizing: "border-box",
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(35,48,61,0.45)",
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "center",
+        zIndex: 50,
+      }}
+      onClick={onCancel}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: C.paper,
+          width: "100%",
+          maxWidth: 480,
+          maxHeight: "88vh",
+          overflowY: "auto",
+          borderRadius: "20px 20px 0 0",
+          padding: "18px 18px 28px",
+          boxSizing: "border-box",
+          boxShadow: "0 -4px 24px rgba(74,54,38,0.18)",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <h2 style={{ fontFamily: serif, fontSize: 20, fontWeight: 600, color: C.ink, margin: 0 }}>
+            {initial ? "Edit recipe" : "New recipe"}
+          </h2>
+          <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }}>
+            <IconX color={C.inkSoft} />
+          </button>
+        </div>
+
+        <label style={labelStyle}>Recipe name</label>
+        <input
+          style={{ ...inputStyle, width: "100%", marginBottom: 12 }}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Weeknight tomato pasta"
+        />
+
+        <label style={labelStyle}>Servings</label>
+        <input
+          type="number"
+          min="1"
+          style={{ ...inputStyle, marginBottom: 14, width: 90 }}
+          value={servings}
+          onChange={(e) => setServings(e.target.value)}
+        />
+
+        <label style={labelStyle}>Ingredients</label>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 8 }}>
+          {ingredients.map((ing) => (
+            <div key={ing.id} style={{ paddingBottom: 10, borderBottom: `1px solid ${C.line}` }}>
+              <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
+                <input
+                  style={{ ...inputStyle, flex: 1, minWidth: 0 }}
+                  placeholder="Ingredient (e.g. flour)"
+                  value={ing.name}
+                  onChange={(e) => updateIng(ing.id, "name", e.target.value)}
+                />
+                <button
+                  onClick={() => removeIng(ing.id)}
+                  style={{ background: "none", border: "none", cursor: "pointer", padding: 4, flexShrink: 0 }}
+                  aria-label="Remove ingredient"
+                >
+                  <IconX size={16} color={C.inkSoft} />
+                </button>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                <input
+                  style={{ ...inputStyle, flex: "1 1 70px", minWidth: 70 }}
+                  placeholder="Qty (e.g. 1 1/2)"
+                  value={ing.qty}
+                  onChange={(e) => updateIng(ing.id, "qty", e.target.value)}
+                />
+                <select
+                  style={{ ...inputStyle, flex: "1 1 85px", minWidth: 85 }}
+                  value={ing.unit}
+                  onChange={(e) => updateIng(ing.id, "unit", e.target.value)}
+                >
+                  {UNITS.map((u) => (
+                    <option key={u} value={u}>
+                      {u || "unit"}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  style={{ ...inputStyle, flex: "1 1 130px", minWidth: 130 }}
+                  value={ing.category || "Other"}
+                  onChange={(e) => updateIng(ing.id, "category", e.target.value)}
+                >
+                  {CATEGORIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          ))}
+        </div>
+        <Btn variant="quiet" onClick={addIng} style={{ marginBottom: 16, padding: "6px 8px" }}>
+          <IconPlus size={16} color={C.herb} /> Add ingredient
+        </Btn>
+
+        <label style={labelStyle}>Instructions</label>
+        <textarea
+          style={{ ...inputStyle, width: "100%", minHeight: 100, resize: "vertical", marginBottom: 6, fontFamily: sans }}
+          value={instructions}
+          onChange={(e) => setInstructions(e.target.value)}
+          placeholder="Steps to cook this dish..."
+        />
+
+        {error && <p style={{ color: C.tomatoDeep, fontSize: 13, margin: "8px 0 0" }}>{error}</p>}
+
+        <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
+          <Btn variant="primary" onClick={handleSave} style={{ flex: 1, justifyContent: "center" }}>
+            Save recipe
+          </Btn>
+          <Btn variant="ghost" onClick={onCancel} style={{ flex: 1, justifyContent: "center" }}>
+            Cancel
+          </Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Recipe card ----------
+function RecipeCard({ recipe, onMenu, isOnMenu, onEdit, onDelete, onOpen }) {
+  return (
+    <div
+      style={{
+        background: C.card,
+        boxShadow: "0 1px 3px rgba(74,54,38,0.08)",
+        borderRadius: 14,
+        padding: "13px 14px",
+        marginBottom: 10,
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+        <div onClick={() => onOpen(recipe)} style={{ cursor: "pointer", flex: 1, minWidth: 0 }}>
+          <h3 style={{ fontFamily: serif, fontSize: 17, fontWeight: 600, color: C.ink, margin: "0 0 3px" }}>
+            {recipe.name}
+          </h3>
+          <p style={{ fontSize: 12.5, color: C.inkSoft, margin: 0 }}>
+            {recipe.servings} servings · {recipe.ingredients.length} ingredients
+          </p>
+        </div>
+        <button
+          onClick={() => onMenu(recipe.id)}
+          aria-label={isOnMenu ? "Remove from menu" : "Add to menu"}
+          style={{ background: "none", border: "none", cursor: "pointer", padding: 4, flexShrink: 0 }}
+        >
+          <IconStar color={isOnMenu ? C.butterDeep : C.inkSoft} filled={isOnMenu} />
+        </button>
+      </div>
+      <div style={{ display: "flex", gap: 14, marginTop: 8 }}>
+        <button onClick={() => onEdit(recipe)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12.5, color: C.herbDeep, padding: 0, fontFamily: sans }}>
+          Edit
+        </button>
+        <button onClick={() => onDelete(recipe.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12.5, color: C.tomatoDeep, padding: 0, fontFamily: sans }}>
+          Delete
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function RecipeDetail({ recipe, onClose }) {
+  if (!recipe) return null;
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(35,48,61,0.45)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 50 }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ background: C.paper, width: "100%", maxWidth: 480, maxHeight: "85vh", overflowY: "auto", borderRadius: "20px 20px 0 0", padding: "18px 18px 28px", boxSizing: "border-box", boxShadow: "0 -4px 24px rgba(74,54,38,0.18)" }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+          <h2 style={{ fontFamily: serif, fontSize: 21, fontWeight: 600, color: C.ink, margin: 0 }}>{recipe.name}</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }}>
+            <IconX color={C.inkSoft} />
+          </button>
+        </div>
+        <p style={{ fontSize: 13, color: C.inkSoft, marginTop: 0 }}>{recipe.servings} servings</p>
+        <h4 style={{ fontFamily: sans, fontSize: 13, fontWeight: 600, color: C.herbDeep, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.4 }}>
+          Ingredients
+        </h4>
+        <ul style={{ margin: "0 0 16px", paddingLeft: 18 }}>
+          {recipe.ingredients.map((i) => (
+            <li key={i.id} style={{ fontSize: 14.5, color: C.ink, marginBottom: 3 }}>
+              {i.qty} {i.unit} {i.name}
+              <span style={{ fontSize: 12, color: C.inkSoft }}> — {i.category || "Other"}</span>
+            </li>
+          ))}
+        </ul>
+        {recipe.instructions && (
+          <>
+            <h4 style={{ fontFamily: sans, fontSize: 13, fontWeight: 600, color: C.herbDeep, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.4 }}>
+              Instructions
+            </h4>
+            <p style={{ fontSize: 14.5, color: C.ink, whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{recipe.instructions}</p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------- Add-to-day modal ----------
+function AddToDayModal({ date, mealId, menuRecipes, onAdd, onClose }) {
+  const mealLabel = MEALS.find((m) => m.id === mealId)?.label || "";
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(35,48,61,0.45)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 50 }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ background: C.paper, width: "100%", maxWidth: 480, maxHeight: "80vh", overflowY: "auto", borderRadius: "20px 20px 0 0", padding: "18px 18px 28px", boxSizing: "border-box", boxShadow: "0 -4px 24px rgba(74,54,38,0.18)" }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <h2 style={{ fontFamily: serif, fontSize: 19, fontWeight: 600, color: C.ink, margin: 0 }}>
+            Add {mealLabel.toLowerCase()} — {fmtDay(date)}, {fmtDate(date)}
+          </h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }}>
+            <IconX color={C.inkSoft} />
+          </button>
+        </div>
+        {menuRecipes.length === 0 ? (
+          <p style={{ fontSize: 14, color: C.inkSoft }}>
+            Your menu is empty. Star a recipe from the Recipes tab to add it to the menu first.
+          </p>
+        ) : (
+          menuRecipes.map((r) => (
+            <button
+              key={r.id}
+              onClick={() => onAdd(r.id)}
+              style={{
+                width: "100%",
+                textAlign: "left",
+                background: C.card,
+                border: "none",
+                boxShadow: "0 1px 3px rgba(74,54,38,0.08)",
+                borderRadius: 12,
+                padding: "12px 14px",
+                marginBottom: 8,
+                cursor: "pointer",
+                fontFamily: sans,
+                fontSize: 15,
+                color: C.ink,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              {r.name}
+              <IconPlus size={16} color={C.herb} />
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------- Main app ----------
+function MealPlanner() {
+  const [tab, setTab] = useState("recipes");
+  const [recipes, setRecipes] = useState([]);
+  const [menuIds, setMenuIds] = useState([]);
+  const [calendar, setCalendar] = useState({});
+  const [groceryChecked, setGroceryChecked] = useState({});
+  const [loaded, setLoaded] = useState(false);
+
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingRecipe, setEditingRecipe] = useState(null);
+  const [viewingRecipe, setViewingRecipe] = useState(null);
+  const [addToDayTarget, setAddToDayTarget] = useState(null); // { date, mealId }
+  const [weekStart, setWeekStart] = useState(getMonday(new Date()));
+
+  useEffect(() => {
+    (async () => {
+      const [rRaw, m, cRaw, g] = await Promise.all([
+        loadKey("recipes", []),
+        loadKey("menu-ids", []),
+        loadKey("calendar", {}),
+        loadKey("grocery-checked", {}),
+      ]);
+      const r = rRaw.map(migrateRecipe);
+      const c = {};
+      Object.entries(cRaw).forEach(([date, entry]) => {
+        c[date] = migrateDayEntry(entry);
+      });
+      setRecipes(r);
+      setMenuIds(m);
+      setCalendar(c);
+      setGroceryChecked(g);
+      setLoaded(true);
+      saveKey("recipes", r);
+      saveKey("calendar", c);
+    })();
+  }, []);
+
+  const persistRecipes = useCallback((next) => {
+    setRecipes(next);
+    saveKey("recipes", next);
+  }, []);
+  const persistMenu = useCallback((next) => {
+    setMenuIds(next);
+    saveKey("menu-ids", next);
+  }, []);
+  const persistCalendar = useCallback((next) => {
+    setCalendar(next);
+    saveKey("calendar", next);
+  }, []);
+  const persistGrocery = useCallback((next) => {
+    setGroceryChecked(next);
+    saveKey("grocery-checked", next);
+  }, []);
+
+  function saveRecipe(recipe) {
+    const exists = recipes.some((r) => r.id === recipe.id);
+    const next = exists ? recipes.map((r) => (r.id === recipe.id ? recipe : r)) : [...recipes, recipe];
+    persistRecipes(next);
+    setFormOpen(false);
+    setEditingRecipe(null);
+  }
+  function deleteRecipe(id) {
+    persistRecipes(recipes.filter((r) => r.id !== id));
+    persistMenu(menuIds.filter((mid) => mid !== id));
+    const nextCal = {};
+    Object.entries(calendar).forEach(([date, slots]) => {
+      nextCal[date] = {
+        breakfast: slots.breakfast.filter((i) => i !== id),
+        lunch: slots.lunch.filter((i) => i !== id),
+        dinner: slots.dinner.filter((i) => i !== id),
+      };
+    });
+    persistCalendar(nextCal);
+  }
+  function toggleMenu(id) {
+    const next = menuIds.includes(id) ? menuIds.filter((m) => m !== id) : [...menuIds, id];
+    persistMenu(next);
+  }
+  function addToDay(date, mealId, recipeId) {
+    const key = toISO(date);
+    const existing = calendar[key] || { breakfast: [], lunch: [], dinner: [] };
+    const nextEntry = { ...existing, [mealId]: [...existing[mealId], recipeId] };
+    persistCalendar({ ...calendar, [key]: nextEntry });
+    setAddToDayTarget(null);
+  }
+  function removeFromDay(dateKey, mealId, index) {
+    const existing = calendar[dateKey] || { breakfast: [], lunch: [], dinner: [] };
+    const nextEntry = { ...existing, [mealId]: existing[mealId].filter((_, i) => i !== index) };
+    persistCalendar({ ...calendar, [dateKey]: nextEntry });
+  }
+
+  const recipesById = useMemo(() => Object.fromEntries(recipes.map((r) => [r.id, r])), [recipes]);
+  const menuRecipes = useMemo(() => menuIds.map((id) => recipesById[id]).filter(Boolean), [menuIds, recipesById]);
+  const weekDates = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
+
+  const groceryList = useMemo(() => {
+    const totals = {};
+    weekDates.forEach((d) => {
+      const entry = calendar[toISO(d)] || { breakfast: [], lunch: [], dinner: [] };
+      const ids = [...entry.breakfast, ...entry.lunch, ...entry.dinner];
+      ids.forEach((id) => {
+        const recipe = recipesById[id];
+        if (!recipe) return;
+        recipe.ingredients.forEach((ing) => {
+          const key = `${ing.name.toLowerCase()}|${ing.unit}`;
+          if (!totals[key]) {
+            totals[key] = { name: ing.name, unit: ing.unit, qty: 0, hasQty: false, category: ing.category || "Other" };
+          }
+          const n = parseQty(ing.qty);
+          if (!isNaN(n)) {
+            totals[key].qty += n;
+            totals[key].hasQty = true;
+          }
+        });
+      });
+    });
+    return Object.entries(totals)
+      .map(([key, v]) => ({ key, ...v }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [calendar, weekDates, recipesById]);
+
+  const groupedGrocery = useMemo(() => {
+    const groups = {};
+    groceryList.forEach((item) => {
+      const cat = item.category || "Other";
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(item);
+    });
+    return CATEGORIES.map((cat) => ({ cat, items: groups[cat] || [] })).filter((g) => g.items.length > 0);
+  }, [groceryList]);
+
+  const weekKey = toISO(weekStart);
+
+  if (!loaded) {
+    return <div style={{ padding: 40, textAlign: "center", color: C.inkSoft, fontFamily: sans }}>Loading your kitchen…</div>;
+  }
+
+  const tabs = [
+    { id: "recipes", label: "Recipes", icon: IconBook },
+    { id: "menu", label: "Menu", icon: IconMenuList },
+    { id: "calendar", label: "Calendar", icon: IconCalendar },
+    { id: "grocery", label: "Grocery", icon: IconCart },
+  ];
+
+  return (
+    <div style={{ background: C.paper, minHeight: 500, fontFamily: sans, maxWidth: 480, margin: "0 auto", position: "relative", paddingBottom: 64 }}>
+      <div
+        style={{
+          position: "relative",
+          background: C.bearFur,
+          paddingTop: 28,
+          paddingBottom: 40,
+          boxShadow: "0 4px 16px rgba(74,54,38,0.14)",
+        }}
+      >
+        <h1
+          style={{
+            fontFamily: serif,
+            fontSize: 23,
+            fontWeight: 700,
+            letterSpacing: 0.2,
+            color: "#FFFFFF",
+            margin: 0,
+            textAlign: "center",
+          }}
+        >
+          Trinh's Planner
+        </h1>
+        <div style={{ display: "flex", justifyContent: "center", marginTop: 10 }}>
+          <div
+            style={{
+              width: 112,
+              height: 112,
+              borderRadius: "50%",
+              background: C.paper,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 6px 16px rgba(74,54,38,0.18)",
+            }}
+          >
+            <BearIllustration width={90} />
+          </div>
+        </div>
+      </div>
+
+      <div style={{ padding: "14px 16px 20px" }}>
+        {tab === "recipes" && (
+          <div>
+            <Btn variant="primary" onClick={() => { setEditingRecipe(null); setFormOpen(true); }} style={{ marginBottom: 14 }}>
+              <IconPlus size={16} color="#fff" /> New recipe
+            </Btn>
+            {recipes.length === 0 ? (
+              <EmptyState text="No recipes yet. Add your first one to start building your menu." />
+            ) : (
+              recipes.map((r) => (
+                <RecipeCard
+                  key={r.id}
+                  recipe={r}
+                  isOnMenu={menuIds.includes(r.id)}
+                  onMenu={toggleMenu}
+                  onEdit={(rec) => { setEditingRecipe(rec); setFormOpen(true); }}
+                  onDelete={deleteRecipe}
+                  onOpen={setViewingRecipe}
+                />
+              ))
+            )}
+          </div>
+        )}
+
+        {tab === "menu" && (
+          <div>
+            <p style={{ fontSize: 13.5, color: C.inkSoft, marginTop: 0, marginBottom: 14 }}>
+              Recipes on your menu are the ones you can schedule onto the calendar. Star a recipe from the Recipes tab to add it here.
+            </p>
+            {menuRecipes.length === 0 ? (
+              <EmptyState text="Your menu is empty. Go star a recipe to put it in rotation." />
+            ) : (
+              menuRecipes.map((r) => (
+                <RecipeCard
+                  key={r.id}
+                  recipe={r}
+                  isOnMenu={true}
+                  onMenu={toggleMenu}
+                  onEdit={(rec) => { setEditingRecipe(rec); setFormOpen(true); }}
+                  onDelete={deleteRecipe}
+                  onOpen={setViewingRecipe}
+                />
+              ))
+            )}
+          </div>
+        )}
+
+        {tab === "calendar" && (
+          <div>
+            <WeekNav weekStart={weekStart} setWeekStart={setWeekStart} />
+            {weekDates.map((d) => {
+              const key = toISO(d);
+              const entry = calendar[key] || { breakfast: [], lunch: [], dinner: [] };
+              return (
+                <div key={key} style={{ marginBottom: 12, background: C.card, boxShadow: "0 1px 3px rgba(74,54,38,0.08)", borderRadius: 14, padding: "12px 14px" }}>
+                  <div style={{ marginBottom: 6 }}>
+                    <span style={{ fontFamily: serif, fontSize: 15.5, fontWeight: 600, color: C.ink }}>{fmtDay(d)}</span>
+                    <span style={{ fontSize: 12.5, color: C.inkSoft, marginLeft: 6 }}>{fmtDate(d)}</span>
+                  </div>
+                  {MEALS.map((meal) => {
+                    const ids = entry[meal.id] || [];
+                    return (
+                      <div key={meal.id} style={{ padding: "8px 0", borderTop: `1px solid ${C.paperDim}` }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: ids.length ? 6 : 0 }}>
+                          <span style={{ fontSize: 12.5, fontWeight: 600, color: C.inkSoft, textTransform: "uppercase", letterSpacing: 0.3 }}>
+                            {meal.label}
+                          </span>
+                          <button
+                            onClick={() => setAddToDayTarget({ date: d, mealId: meal.id })}
+                            style={{ background: C.paperDim, border: "none", borderRadius: 999, cursor: "pointer", padding: "4px 9px", display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: C.herbDeep, fontFamily: sans }}
+                          >
+                            <IconPlus size={12} color={C.herbDeep} /> Add
+                          </button>
+                        </div>
+                        {ids.length > 0 && (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                            {ids.map((id, idx) => {
+                              const r = recipesById[id];
+                              if (!r) return null;
+                              return (
+                                <span
+                                  key={idx}
+                                  style={{ background: C.paperDim, borderRadius: 20, padding: "5px 10px", fontSize: 13, color: C.ink, display: "flex", alignItems: "center", gap: 6 }}
+                                >
+                                  {r.name}
+                                  <button onClick={() => removeFromDay(key, meal.id, idx)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, lineHeight: 0 }} aria-label="Remove">
+                                    <IconX size={13} color={C.inkSoft} />
+                                  </button>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {tab === "grocery" && (
+          <div>
+            <WeekNav weekStart={weekStart} setWeekStart={setWeekStart} />
+            <p style={{ fontSize: 13, color: C.inkSoft, margin: "0 0 14px" }}>
+              Everything needed for the week of {fmtDate(weekStart)} – {fmtDate(addDays(weekStart, 6))}.
+            </p>
+            {groupedGrocery.length === 0 ? (
+              <EmptyState text="Nothing planned for this week yet. Add meals to the calendar to build a list." />
+            ) : (
+              groupedGrocery.map((group) => (
+                <div key={group.cat} style={{ marginBottom: 16 }}>
+                  <h4 style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 600, color: C.herbDeep, textTransform: "uppercase", letterSpacing: 0.4, margin: "0 0 6px" }}>
+                    {group.cat}
+                  </h4>
+                  <div style={{ background: C.card, boxShadow: "0 1px 3px rgba(74,54,38,0.08)", borderRadius: 14, overflow: "hidden" }}>
+                    {group.items.map((item, idx) => {
+                      const checkKey = `${weekKey}::${item.key}`;
+                      const checked = !!groceryChecked[checkKey];
+                      return (
+                        <div
+                          key={item.key}
+                          onClick={() => persistGrocery({ ...groceryChecked, [checkKey]: !checked })}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            padding: "11px 13px",
+                            borderBottom: idx < group.items.length - 1 ? `1px solid ${C.paperDim}` : "none",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: 20,
+                              height: 20,
+                              borderRadius: 5,
+                              border: `1.5px solid ${checked ? C.herb : C.line}`,
+                              background: checked ? C.herb : "transparent",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              flexShrink: 0,
+                            }}
+                          >
+                            {checked && <IconCheck size={13} color="#fff" />}
+                          </div>
+                          <span style={{ fontSize: 14.5, color: checked ? C.inkSoft : C.ink, textDecoration: checked ? "line-through" : "none" }}>
+                            {item.hasQty ? `${formatQty(item.qty)} ${item.unit} ` : ""}
+                            {item.name}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
+      {formOpen && (
+        <RecipeForm
+          initial={editingRecipe}
+          onSave={saveRecipe}
+          onCancel={() => { setFormOpen(false); setEditingRecipe(null); }}
+        />
+      )}
+      {viewingRecipe && <RecipeDetail recipe={viewingRecipe} onClose={() => setViewingRecipe(null)} />}
+      {addToDayTarget && (
+        <AddToDayModal
+          date={addToDayTarget.date}
+          mealId={addToDayTarget.mealId}
+          menuRecipes={menuRecipes}
+          onAdd={(id) => addToDay(addToDayTarget.date, addToDayTarget.mealId, id)}
+          onClose={() => setAddToDayTarget(null)}
+        />
+      )}
+
+      <div
+        style={{
+          position: "fixed",
+          bottom: 0,
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: "100%",
+          maxWidth: 480,
+          background: C.card,
+          boxShadow: "0 -2px 12px rgba(74,54,38,0.1)",
+          display: "flex",
+          padding: "8px 4px 10px",
+        }}
+      >
+        {tabs.map((t) => {
+          const Icon = t.icon;
+          const active = tab === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              style={{
+                flex: 1,
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 4,
+                padding: "4px 0",
+              }}
+            >
+              <div
+                style={{
+                  width: 44,
+                  height: 26,
+                  borderRadius: 999,
+                  background: active ? C.paperDim : "transparent",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Icon size={20} color={active ? C.herbDeep : C.inkSoft} />
+              </div>
+              <span style={{ fontSize: 11, fontFamily: sans, color: active ? C.herbDeep : C.inkSoft, fontWeight: active ? 600 : 400 }}>
+                {t.label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function WeekNav({ weekStart, setWeekStart }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+      <button onClick={() => setWeekStart(addDays(weekStart, -7))} style={navBtnStyle}>
+        ‹
+      </button>
+      <span style={{ fontFamily: serif, fontSize: 15, fontWeight: 600, color: C.ink }}>
+        {fmtDate(weekStart)} – {fmtDate(addDays(weekStart, 6))}
+      </span>
+      <button onClick={() => setWeekStart(addDays(weekStart, 7))} style={navBtnStyle}>
+        ›
+      </button>
+    </div>
+  );
+}
+const navBtnStyle = {
+  background: C.card,
+  border: "none",
+  boxShadow: "0 1px 3px rgba(74,54,38,0.1)",
+  borderRadius: "50%",
+  width: 34,
+  height: 34,
+  cursor: "pointer",
+  fontSize: 18,
+  color: C.ink,
+  lineHeight: 1,
+};
+
+function EmptyState({ text }) {
+  return (
+    <div style={{ textAlign: "center", padding: "36px 16px", color: C.inkSoft, fontSize: 14, border: `1px dashed ${C.line}`, borderRadius: 12 }}>
+      {text}
+    </div>
+  );
+}
+
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<MealPlanner />);
+</script>
+</body>
+</html>
