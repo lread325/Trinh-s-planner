@@ -1,30 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
-<title>Trinh's Planner</title>
-<meta name="theme-color" content="#C9A788" />
-<meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="Trinh's Planner" />
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-<meta http-equiv="Pragma" content="no-cache" />
-<meta http-equiv="Expires" content="0" />
-<link rel="manifest" href="manifest.json" />
-<style>
-  html, body { margin: 0; padding: 0; background: #F3E7D6; -webkit-tap-highlight-color: transparent; }
-  * { -webkit-text-size-adjust: 100%; }
-  input, select, textarea, button { font-size: 16px; } /* prevents iOS zoom-on-focus */
-</style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
-</head>
-<body>
-<div id="root"></div>
-<script type="text/babel" data-presets="react">
-const { useState, useEffect, useMemo, useCallback } = React;
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 
 // ---------- design tokens ----------
 const C = {
@@ -140,19 +114,18 @@ function formatQty(n) {
   return `${whole}`;
 }
 
-// ---------- storage helpers (plain browser localStorage - private to this device) ----------
-const STORAGE_PREFIX = "trinhs-planner:";
+// ---------- storage helpers ----------
 async function loadKey(key, fallback) {
   try {
-    const raw = localStorage.getItem(STORAGE_PREFIX + key);
-    return raw != null ? JSON.parse(raw) : fallback;
+    const res = await window.storage.get(key, false);
+    return res ? JSON.parse(res.value) : fallback;
   } catch (e) {
     return fallback;
   }
 }
 async function saveKey(key, value) {
   try {
-    localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
+    await window.storage.set(key, JSON.stringify(value), false);
   } catch (e) {
     console.error("storage save failed", key, e);
   }
@@ -1051,7 +1024,7 @@ function FolderModal({ folders, onSave, onDelete, onClose }) {
 }
 
 // ---------- Main app ----------
-function MealPlanner() {
+export default function MealPlanner() {
   const [tab, setTab] = useState("recipes");
   const [recipes, setRecipes] = useState([]);
   const [menuIds, setMenuIds] = useState([]);
@@ -1602,10 +1575,3 @@ function EmptyState({ text }) {
     </div>
   );
 }
-
-
-const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(<MealPlanner />);
-</script>
-</body>
-</html>
