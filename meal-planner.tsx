@@ -380,6 +380,22 @@ function IconPlus({ size = 20, color }) {
     </svg>
   );
 }
+function IconMinus({ size = 20, color }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+      <path d="M5 12h14" strokeLinecap="round" />
+    </svg>
+  );
+}
+function IconPantry({ size = 22, color }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.6">
+      <rect x="4" y="3.5" width="16" height="17" rx="1.6" />
+      <path d="M4 10.5h16M4 17h16" />
+      <path d="M9 3.5v7M9 17v3.5" strokeLinecap="round" />
+    </svg>
+  );
+}
 function IconX({ size = 18, color }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
@@ -387,10 +403,10 @@ function IconX({ size = 18, color }) {
     </svg>
   );
 }
-function IconStar({ size = 18, color, filled }) {
+function IconTrash({ size = 17, color }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? color : "none"} stroke={color} strokeWidth="1.6">
-      <path d="M12 3.5l2.6 5.3 5.8.85-4.2 4.1 1 5.8L12 16.8l-5.2 2.75 1-5.8-4.2-4.1 5.8-.85L12 3.5Z" strokeLinejoin="round" />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.6">
+      <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m-9 0 1 12.5A1.5 1.5 0 0 0 7.5 21h9a1.5 1.5 0 0 0 1.5-1.5L19 7" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -770,7 +786,7 @@ function RecipeForm({ initial, onSave, onCancel, folders, onManageFolders }) {
 }
 
 // ---------- Recipe card ----------
-function RecipeCard({ recipe, onMenu, isOnMenu, onEdit, onDelete, onOpen, folderColor }) {
+function RecipeCard({ recipe, onEdit, onDelete, onOpen, folderColor }) {
   return (
     <div
       style={{
@@ -782,22 +798,13 @@ function RecipeCard({ recipe, onMenu, isOnMenu, onEdit, onDelete, onOpen, folder
         marginBottom: 10,
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-        <div onClick={() => onOpen(recipe)} style={{ cursor: "pointer", flex: 1, minWidth: 0 }}>
-          <h3 style={{ fontFamily: serif, fontSize: 17, fontWeight: 600, color: C.ink, margin: "0 0 3px" }}>
-            {recipe.name}
-          </h3>
-          <p style={{ fontSize: 12.5, color: C.inkSoft, margin: 0 }}>
-            {recipe.servings} servings · {recipe.ingredients.length} ingredients
-          </p>
-        </div>
-        <button
-          onClick={() => onMenu(recipe.id)}
-          aria-label={isOnMenu ? "Remove from menu" : "Add to menu"}
-          style={{ background: "none", border: "none", cursor: "pointer", padding: 4, flexShrink: 0 }}
-        >
-          <IconStar color={isOnMenu ? C.butterDeep : C.inkSoft} filled={isOnMenu} />
-        </button>
+      <div onClick={() => onOpen(recipe)} style={{ cursor: "pointer" }}>
+        <h3 style={{ fontFamily: serif, fontSize: 17, fontWeight: 600, color: C.ink, margin: "0 0 3px" }}>
+          {recipe.name}
+        </h3>
+        <p style={{ fontSize: 12.5, color: C.inkSoft, margin: 0 }}>
+          {recipe.servings} servings · {recipe.ingredients.length} ingredients
+        </p>
       </div>
       <div style={{ display: "flex", gap: 14, marginTop: 8 }}>
         <button onClick={() => onEdit(recipe)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12.5, color: C.herbDeep, padding: 0, fontFamily: sans }}>
@@ -811,7 +818,7 @@ function RecipeCard({ recipe, onMenu, isOnMenu, onEdit, onDelete, onOpen, folder
   );
 }
 
-function RecipeDetail({ recipe, onClose }) {
+function RecipeDetail({ recipe, onClose, pantry, onTogglePantry }) {
   if (!recipe) return null;
   return (
     <div
@@ -832,13 +839,53 @@ function RecipeDetail({ recipe, onClose }) {
         <h4 style={{ fontFamily: sans, fontSize: 13, fontWeight: 600, color: C.herbDeep, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.4 }}>
           Ingredients
         </h4>
-        <ul style={{ margin: "0 0 16px", paddingLeft: 18 }}>
-          {recipe.ingredients.map((i) => (
-            <li key={i.id} style={{ fontSize: 14.5, color: C.ink, marginBottom: 3 }}>
-              {i.qty} {i.unit} {i.name}
-              <span style={{ fontSize: 12, color: C.inkSoft }}> — {i.category || "Other"}</span>
-            </li>
-          ))}
+        <ul style={{ margin: "0 0 16px", padding: 0, listStyle: "none" }}>
+          {recipe.ingredients.map((i) => {
+            const inPantry = pantry?.some(
+              (p) => p.name.toLowerCase() === i.name.toLowerCase() && (p.unit || "").toLowerCase() === (i.unit || "").toLowerCase()
+            );
+            return (
+              <li
+                key={i.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 8,
+                  fontSize: 14.5,
+                  color: C.ink,
+                  padding: "6px 0",
+                  borderBottom: `1px solid ${C.paperDim}`,
+                }}
+              >
+                <span>
+                  {i.qty} {i.unit} {i.name}
+                  <span style={{ fontSize: 12, color: C.inkSoft }}> — {i.category || "Other"}</span>
+                </span>
+                <button
+                  onClick={() => onTogglePantry && onTogglePantry(i)}
+                  style={{
+                    fontFamily: sans,
+                    fontSize: 11.5,
+                    fontWeight: 500,
+                    padding: "5px 9px",
+                    borderRadius: 999,
+                    border: "none",
+                    cursor: "pointer",
+                    flexShrink: 0,
+                    background: inPantry ? C.herb : C.paperDim,
+                    color: inPantry ? "#fff" : C.herbDeep,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                  }}
+                >
+                  {inPantry ? <IconCheck size={11} color="#fff" /> : <IconPlus size={11} color={C.herbDeep} />}
+                  {inPantry ? "In pantry" : "Add to pantry"}
+                </button>
+              </li>
+            );
+          })}
         </ul>
         {recipe.instructions && (
           <>
@@ -854,7 +901,7 @@ function RecipeDetail({ recipe, onClose }) {
 }
 
 // ---------- Add-to-day modal ----------
-function AddToDayModal({ date, mealId, menuRecipes, onAdd, onClose }) {
+function AddToDayModal({ date, mealId, availableRecipes, onAdd, onClose }) {
   const mealLabel = MEALS.find((m) => m.id === mealId)?.label || "";
   return (
     <div
@@ -873,12 +920,12 @@ function AddToDayModal({ date, mealId, menuRecipes, onAdd, onClose }) {
             <IconX color={C.inkSoft} />
           </button>
         </div>
-        {menuRecipes.length === 0 ? (
+        {availableRecipes.length === 0 ? (
           <p style={{ fontSize: 14, color: C.inkSoft }}>
-            Your menu is empty. Star a recipe from the Recipes tab to add it to the menu first.
+            No recipes yet. Add one from the Recipes tab first.
           </p>
         ) : (
-          menuRecipes.map((r) => (
+          availableRecipes.map((r) => (
             <button
               key={r.id}
               onClick={() => onAdd(r.id)}
@@ -1027,10 +1074,10 @@ function FolderModal({ folders, onSave, onDelete, onClose }) {
 export default function MealPlanner() {
   const [tab, setTab] = useState("recipes");
   const [recipes, setRecipes] = useState([]);
-  const [menuIds, setMenuIds] = useState([]);
   const [calendar, setCalendar] = useState({});
   const [groceryChecked, setGroceryChecked] = useState({});
   const [folders, setFolders] = useState([]);
+  const [pantry, setPantry] = useState([]);
   const [loaded, setLoaded] = useState(false);
 
   const [formOpen, setFormOpen] = useState(false);
@@ -1039,15 +1086,16 @@ export default function MealPlanner() {
   const [addToDayTarget, setAddToDayTarget] = useState(null); // { date, mealId }
   const [weekStart, setWeekStart] = useState(getMonday(new Date()));
   const [folderModalOpen, setFolderModalOpen] = useState(false);
+  const [pantryInput, setPantryInput] = useState("");
 
   useEffect(() => {
     (async () => {
-      const [rRaw, m, cRaw, g, f] = await Promise.all([
+      const [rRaw, cRaw, g, f, p] = await Promise.all([
         loadKey("recipes", []),
-        loadKey("menu-ids", []),
         loadKey("calendar", {}),
         loadKey("grocery-checked", {}),
         loadKey("folders", []),
+        loadKey("pantry", []),
       ]);
       const r = rRaw.map(migrateRecipe);
       const c = {};
@@ -1055,10 +1103,10 @@ export default function MealPlanner() {
         c[date] = migrateDayEntry(entry);
       });
       setRecipes(r);
-      setMenuIds(m);
       setCalendar(c);
       setGroceryChecked(g);
       setFolders(f);
+      setPantry(p);
       setLoaded(true);
       saveKey("recipes", r);
       saveKey("calendar", c);
@@ -1068,10 +1116,6 @@ export default function MealPlanner() {
   const persistRecipes = useCallback((next) => {
     setRecipes(next);
     saveKey("recipes", next);
-  }, []);
-  const persistMenu = useCallback((next) => {
-    setMenuIds(next);
-    saveKey("menu-ids", next);
   }, []);
   const persistCalendar = useCallback((next) => {
     setCalendar(next);
@@ -1085,6 +1129,53 @@ export default function MealPlanner() {
     setFolders(next);
     saveKey("folders", next);
   }, []);
+  const persistPantry = useCallback((next) => {
+    setPantry(next);
+    saveKey("pantry", next);
+  }, []);
+
+  function addPantryItem(text) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const parsed = parseIngredientLine(trimmed);
+    if (!parsed.name) return;
+    const key = parsed.name.toLowerCase();
+    const unitKey = (parsed.unit || "").toLowerCase();
+    const newQtyNum = parseQty(parsed.qty);
+    const existingIdx = pantry.findIndex((p) => p.name.toLowerCase() === key && (p.unit || "").toLowerCase() === unitKey);
+    if (existingIdx >= 0) {
+      const existing = pantry[existingIdx];
+      const existingQtyNum = parseQty(String(existing.qty));
+      let mergedQty = existing.qty;
+      if (!isNaN(newQtyNum) && !isNaN(existingQtyNum)) mergedQty = existingQtyNum + newQtyNum;
+      else if (!isNaN(newQtyNum)) mergedQty = newQtyNum;
+      const next = pantry.map((p, i) => (i === existingIdx ? { ...p, qty: mergedQty } : p));
+      persistPantry(next);
+    } else {
+      const item = {
+        id: uid(),
+        name: parsed.name,
+        qty: !isNaN(newQtyNum) ? newQtyNum : "",
+        unit: parsed.unit || "",
+        category: guessCategory(parsed.name),
+      };
+      persistPantry([...pantry, item]);
+    }
+  }
+  function adjustPantryQty(id, delta) {
+    const next = pantry
+      .map((p) => {
+        if (p.id !== id) return p;
+        const current = isNaN(parseQty(String(p.qty))) ? 0 : parseQty(String(p.qty));
+        const updated = current + delta;
+        return { ...p, qty: updated };
+      })
+      .filter((p) => p.id !== id || parseQty(String(p.qty)) > 0);
+    persistPantry(next);
+  }
+  function removePantryItem(id) {
+    persistPantry(pantry.filter((p) => p.id !== id));
+  }
 
   function saveFolder(folder) {
     const exists = folders.some((f) => f.id === folder.id);
@@ -1105,7 +1196,6 @@ export default function MealPlanner() {
   }
   function deleteRecipe(id) {
     persistRecipes(recipes.filter((r) => r.id !== id));
-    persistMenu(menuIds.filter((mid) => mid !== id));
     const nextCal = {};
     Object.entries(calendar).forEach(([date, slots]) => {
       nextCal[date] = {
@@ -1115,10 +1205,6 @@ export default function MealPlanner() {
       };
     });
     persistCalendar(nextCal);
-  }
-  function toggleMenu(id) {
-    const next = menuIds.includes(id) ? menuIds.filter((m) => m !== id) : [...menuIds, id];
-    persistMenu(next);
   }
   function addToDay(date, mealId, recipeId) {
     const key = toISO(date);
@@ -1132,12 +1218,49 @@ export default function MealPlanner() {
     const nextEntry = { ...existing, [mealId]: existing[mealId].filter((_, i) => i !== index) };
     persistCalendar({ ...calendar, [dateKey]: nextEntry });
   }
+  function togglePantryIngredient(ing) {
+    const key = ing.name.toLowerCase();
+    const unitKey = (ing.unit || "").toLowerCase();
+    const alreadyIn = pantry.some((p) => p.name.toLowerCase() === key && (p.unit || "").toLowerCase() === unitKey);
+    if (alreadyIn) {
+      persistPantry(pantry.filter((p) => !(p.name.toLowerCase() === key && (p.unit || "").toLowerCase() === unitKey)));
+      return;
+    }
+    const qtyNum = parseQty(ing.qty);
+    const item = {
+      id: uid(),
+      name: ing.name,
+      qty: !isNaN(qtyNum) ? qtyNum : "",
+      unit: ing.unit || "",
+      category: ing.category || guessCategory(ing.name),
+    };
+    persistPantry([...pantry, item]);
+  }
 
   const recipesById = useMemo(() => Object.fromEntries(recipes.map((r) => [r.id, r])), [recipes]);
-  const menuRecipes = useMemo(() => menuIds.map((id) => recipesById[id]).filter(Boolean), [menuIds, recipesById]);
   const recipeGroups = useMemo(() => groupByFolder(recipes, folders), [recipes, folders]);
-  const menuGroups = useMemo(() => groupByFolder(menuRecipes, folders), [menuRecipes, folders]);
   const weekDates = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
+
+  const pantryByName = useMemo(() => {
+    const map = {};
+    pantry.forEach((p) => {
+      const key = p.name.trim().toLowerCase();
+      if (!map[key]) map[key] = [];
+      map[key].push(p);
+    });
+    return map;
+  }, [pantry]);
+
+  const pantryGroups = useMemo(() => {
+    const groups = {};
+    pantry.forEach((item) => {
+      const cat = item.category || "Other";
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(item);
+    });
+    Object.values(groups).forEach((list) => list.sort((a, b) => a.name.localeCompare(b.name)));
+    return CATEGORIES.map((cat) => ({ cat, items: groups[cat] || [] })).filter((g) => g.items.length > 0);
+  }, [pantry]);
 
   const groceryList = useMemo(() => {
     const totals = {};
@@ -1160,10 +1283,33 @@ export default function MealPlanner() {
         });
       });
     });
+
+    // subtract what's already in the pantry
+    Object.keys(totals).forEach((key) => {
+      const item = totals[key];
+      const pantryMatches = pantryByName[item.name.trim().toLowerCase()];
+      if (!pantryMatches || pantryMatches.length === 0) return;
+      const sameUnit = pantryMatches.find((p) => (p.unit || "").toLowerCase() === (item.unit || "").toLowerCase() && !isNaN(parseQty(String(p.qty))));
+      if (sameUnit && item.hasQty) {
+        const remainder = item.qty - parseQty(String(sameUnit.qty));
+        if (remainder <= 0.001) {
+          delete totals[key];
+        } else {
+          item.qty = remainder;
+          item.pantryAdjusted = true;
+        }
+        return;
+      }
+      const presenceOnly = pantryMatches.some((p) => isNaN(parseQty(String(p.qty))));
+      if (presenceOnly) {
+        delete totals[key];
+      }
+    });
+
     return Object.entries(totals)
       .map(([key, v]) => ({ key, ...v }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [calendar, weekDates, recipesById]);
+  }, [calendar, weekDates, recipesById, pantryByName]);
 
   const groupedGrocery = useMemo(() => {
     const groups = {};
@@ -1186,6 +1332,7 @@ export default function MealPlanner() {
     { id: "menu", label: "Menu", icon: IconMenuList },
     { id: "calendar", label: "Calendar", icon: IconCalendar },
     { id: "grocery", label: "Grocery", icon: IconCart },
+    { id: "pantry", label: "Pantry", icon: IconPantry },
   ];
 
   return (
@@ -1248,8 +1395,6 @@ export default function MealPlanner() {
                 <RecipeCard
                   key={r.id}
                   recipe={r}
-                  isOnMenu={menuIds.includes(r.id)}
-                  onMenu={toggleMenu}
                   onEdit={(rec) => { setEditingRecipe(rec); setFormOpen(true); }}
                   onDelete={deleteRecipe}
                   onOpen={setViewingRecipe}
@@ -1271,8 +1416,6 @@ export default function MealPlanner() {
                       <RecipeCard
                         key={r.id}
                         recipe={r}
-                        isOnMenu={menuIds.includes(r.id)}
-                        onMenu={toggleMenu}
                         onEdit={(rec) => { setEditingRecipe(rec); setFormOpen(true); }}
                         onDelete={deleteRecipe}
                         onOpen={setViewingRecipe}
@@ -1289,27 +1432,25 @@ export default function MealPlanner() {
         {tab === "menu" && (
           <div>
             <p style={{ fontSize: 13.5, color: C.inkSoft, marginTop: 0, marginBottom: 10 }}>
-              Recipes on your menu are the ones you can schedule onto the calendar. Star a recipe from the Recipes tab to add it here.
+              All of your recipes are ready to schedule — tap one on the Calendar tab to add it to a day.
             </p>
             <Btn variant="ghost" onClick={() => setFolderModalOpen(true)} style={{ marginBottom: 14 }}>
               Folders
             </Btn>
-            {menuRecipes.length === 0 ? (
-              <EmptyState text="Your menu is empty. Go star a recipe to put it in rotation." />
+            {recipes.length === 0 ? (
+              <EmptyState text="No recipes yet. Add one from the Recipes tab to get started." />
             ) : folders.length === 0 ? (
-              menuRecipes.map((r) => (
+              recipes.map((r) => (
                 <RecipeCard
                   key={r.id}
                   recipe={r}
-                  isOnMenu={true}
-                  onMenu={toggleMenu}
                   onEdit={(rec) => { setEditingRecipe(rec); setFormOpen(true); }}
                   onDelete={deleteRecipe}
                   onOpen={setViewingRecipe}
                 />
               ))
             ) : (
-              menuGroups.map((group) => (
+              recipeGroups.map((group) => (
                 <div key={group.folder ? group.folder.id : "unfiled"} style={{ marginBottom: 18 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 8 }}>
                     <span style={{ width: 11, height: 11, borderRadius: "50%", background: group.folder ? group.folder.color : C.line, flexShrink: 0 }} />
@@ -1324,8 +1465,6 @@ export default function MealPlanner() {
                       <RecipeCard
                         key={r.id}
                         recipe={r}
-                        isOnMenu={true}
-                        onMenu={toggleMenu}
                         onEdit={(rec) => { setEditingRecipe(rec); setFormOpen(true); }}
                         onDelete={deleteRecipe}
                         onOpen={setViewingRecipe}
@@ -1398,10 +1537,10 @@ export default function MealPlanner() {
           <div>
             <WeekNav weekStart={weekStart} setWeekStart={setWeekStart} />
             <p style={{ fontSize: 13, color: C.inkSoft, margin: "0 0 14px" }}>
-              Everything needed for the week of {fmtDate(weekStart)} – {fmtDate(addDays(weekStart, 6))}.
+              Everything needed for the week of {fmtDate(weekStart)} – {fmtDate(addDays(weekStart, 6))}, minus what's already in your pantry.
             </p>
             {groupedGrocery.length === 0 ? (
-              <EmptyState text="Nothing planned for this week yet. Add meals to the calendar to build a list." />
+              <EmptyState text="Nothing left to buy — either nothing's planned for this week, or your pantry already covers it." />
             ) : (
               groupedGrocery.map((group) => (
                 <div key={group.cat} style={{ marginBottom: 16 }}>
@@ -1443,7 +1582,115 @@ export default function MealPlanner() {
                           <span style={{ fontSize: 14.5, color: checked ? C.inkSoft : C.ink, textDecoration: checked ? "line-through" : "none" }}>
                             {item.hasQty ? `${formatQty(item.qty)} ${item.unit} ` : ""}
                             {item.name}
+                            {item.pantryAdjusted && (
+                              <span style={{ fontSize: 12, color: C.inkSoft, fontStyle: "italic" }}> · have some in pantry</span>
+                            )}
                           </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {tab === "pantry" && (
+          <div>
+            <p style={{ fontSize: 13.5, color: C.inkSoft, marginTop: 0, marginBottom: 12 }}>
+              What you already have on hand. Anything listed here gets subtracted from your weekly grocery list.
+            </p>
+            <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+              <input
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  fontFamily: sans,
+                  fontSize: 15,
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  border: `1px solid ${C.line}`,
+                  background: "#fff",
+                  color: C.ink,
+                  boxSizing: "border-box",
+                }}
+                placeholder="e.g. 2 cups flour, or just olive oil"
+                value={pantryInput}
+                onChange={(e) => setPantryInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    addPantryItem(pantryInput);
+                    setPantryInput("");
+                  }
+                }}
+              />
+              <Btn
+                variant="primary"
+                onClick={() => {
+                  addPantryItem(pantryInput);
+                  setPantryInput("");
+                }}
+              >
+                Add
+              </Btn>
+            </div>
+
+            {pantry.length === 0 ? (
+              <EmptyState text="Your pantry is empty. Add staples you already have so they're skipped on your grocery list." />
+            ) : (
+              pantryGroups.map((group) => (
+                <div key={group.cat} style={{ marginBottom: 16 }}>
+                  <h4 style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 600, color: C.herbDeep, textTransform: "uppercase", letterSpacing: 0.4, margin: "0 0 6px" }}>
+                    {group.cat}
+                  </h4>
+                  <div style={{ background: C.card, boxShadow: "0 1px 3px rgba(74,54,38,0.08)", borderRadius: 14, overflow: "hidden" }}>
+                    {group.items.map((item, idx) => {
+                      const qtyNum = parseQty(String(item.qty));
+                      const hasQty = !isNaN(qtyNum) && String(item.qty).trim() !== "";
+                      return (
+                        <div
+                          key={item.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            padding: "10px 13px",
+                            borderBottom: idx < group.items.length - 1 ? `1px solid ${C.paperDim}` : "none",
+                          }}
+                        >
+                          <span style={{ fontSize: 14.5, color: C.ink, flex: 1, minWidth: 0 }}>
+                            {item.name}
+                            {!hasQty && <span style={{ fontSize: 12, color: C.inkSoft, marginLeft: 6 }}>in stock</span>}
+                          </span>
+                          {hasQty && (
+                            <button
+                              onClick={() => adjustPantryQty(item.id, -1)}
+                              aria-label="Decrease"
+                              style={{ width: 26, height: 26, borderRadius: "50%", background: C.paperDim, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                            >
+                              <IconMinus size={14} color={C.herbDeep} />
+                            </button>
+                          )}
+                          {hasQty && (
+                            <span style={{ fontSize: 13.5, color: C.ink, minWidth: 44, textAlign: "center", flexShrink: 0 }}>
+                              {formatQty(qtyNum)} {item.unit}
+                            </span>
+                          )}
+                          <button
+                            onClick={() => adjustPantryQty(item.id, 1)}
+                            aria-label="Increase"
+                            style={{ width: 26, height: 26, borderRadius: "50%", background: C.paperDim, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                          >
+                            <IconPlus size={14} color={C.herbDeep} />
+                          </button>
+                          <button
+                            onClick={() => removePantryItem(item.id)}
+                            aria-label="Remove from pantry"
+                            style={{ background: "none", border: "none", cursor: "pointer", padding: 4, flexShrink: 0 }}
+                          >
+                            <IconTrash color={C.tomatoDeep} />
+                          </button>
                         </div>
                       );
                     })}
@@ -1464,7 +1711,14 @@ export default function MealPlanner() {
           onManageFolders={() => setFolderModalOpen(true)}
         />
       )}
-      {viewingRecipe && <RecipeDetail recipe={viewingRecipe} onClose={() => setViewingRecipe(null)} />}
+      {viewingRecipe && (
+        <RecipeDetail
+          recipe={viewingRecipe}
+          onClose={() => setViewingRecipe(null)}
+          pantry={pantry}
+          onTogglePantry={togglePantryIngredient}
+        />
+      )}
       {folderModalOpen && (
         <FolderModal
           folders={folders}
@@ -1477,7 +1731,7 @@ export default function MealPlanner() {
         <AddToDayModal
           date={addToDayTarget.date}
           mealId={addToDayTarget.mealId}
-          menuRecipes={menuRecipes}
+          availableRecipes={recipes.slice().sort((a, b) => a.name.localeCompare(b.name))}
           onAdd={(id) => addToDay(addToDayTarget.date, addToDayTarget.mealId, id)}
           onClose={() => setAddToDayTarget(null)}
         />
