@@ -550,10 +550,6 @@ function RecipeForm({ initial, onSave, onCancel, folders, onManageFolders }) {
     const cleanIngredients = ingredients
       .map((i) => ({ ...i, name: i.name.trim() }))
       .filter((i) => i.name);
-    if (cleanIngredients.length === 0) {
-      setError("Add at least one ingredient.");
-      return;
-    }
     onSave({
       id: initial?.id || uid(),
       name: name.trim(),
@@ -803,7 +799,7 @@ function RecipeCard({ recipe, onEdit, onDelete, onOpen, folderColor }) {
           {recipe.name}
         </h3>
         <p style={{ fontSize: 12.5, color: C.inkSoft, margin: 0 }}>
-          {recipe.servings} servings · {recipe.ingredients.length} ingredients
+          {recipe.servings} servings · {recipe.ingredients.length === 0 ? "no ingredients" : `${recipe.ingredients.length} ingredients`}
         </p>
       </div>
       <div style={{ display: "flex", gap: 14, marginTop: 8 }}>
@@ -836,47 +832,53 @@ function RecipeDetail({ recipe, onClose, pantry, onTogglePantry }) {
           </button>
         </div>
         <p style={{ fontSize: 13, color: C.inkSoft, marginTop: 0 }}>{recipe.servings} servings</p>
-        <h4 style={{ fontFamily: sans, fontSize: 13, fontWeight: 600, color: C.herbDeep, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.4 }}>
-          Ingredients
-        </h4>
-        <ul style={{ margin: "0 0 16px", padding: 0, listStyle: "none" }}>
-          {recipe.ingredients.map((i) => {
-            const inPantry = pantry?.some(
-              (p) => p.name.toLowerCase() === i.name.toLowerCase() && (p.unit || "").toLowerCase() === (i.unit || "").toLowerCase()
-            );
-            return (
-              <li
-                key={i.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 8,
-                  fontSize: 14.5,
-                  color: C.ink,
-                  padding: "6px 0",
-                  borderBottom: `1px solid ${C.paperDim}`,
-                }}
-              >
-                <span>
-                  {i.qty} {i.unit} {i.name}
-                  <span style={{ fontSize: 12, color: C.inkSoft }}> — {i.category || "Other"}</span>
-                </span>
-                <button
-                  onClick={() => onTogglePantry && onTogglePantry(i)}
-                  style={{
-                    fontFamily: sans,
-                    fontSize: 11.5,
-                    fontWeight: 500,
-                    padding: "5px 9px",
-                    borderRadius: 999,
-                    border: "none",
-                    cursor: "pointer",
-                    flexShrink: 0,
-                    background: inPantry ? C.herb : C.paperDim,
-                    color: inPantry ? "#fff" : C.herbDeep,
-                    display: "flex",
-                    alignItems: "center",
+        {recipe.ingredients.length === 0 ? (
+          <p style={{ fontSize: 13.5, color: C.inkSoft, fontStyle: "italic", margin: "0 0 16px" }}>
+            No ingredients — handy for leftovers or takeout nights that shouldn't add anything to your grocery list.
+          </p>
+        ) : (
+          <>
+            <h4 style={{ fontFamily: sans, fontSize: 13, fontWeight: 600, color: C.herbDeep, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.4 }}>
+              Ingredients
+            </h4>
+            <ul style={{ margin: "0 0 16px", padding: 0, listStyle: "none" }}>
+              {recipe.ingredients.map((i) => {
+                const inPantry = pantry?.some(
+                  (p) => p.name.toLowerCase() === i.name.toLowerCase() && (p.unit || "").toLowerCase() === (i.unit || "").toLowerCase()
+                );
+                return (
+                  <li
+                    key={i.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 8,
+                      fontSize: 14.5,
+                      color: C.ink,
+                      padding: "6px 0",
+                      borderBottom: `1px solid ${C.paperDim}`,
+                    }}
+                  >
+                    <span>
+                      {i.qty} {i.unit} {i.name}
+                      <span style={{ fontSize: 12, color: C.inkSoft }}> — {i.category || "Other"}</span>
+                    </span>
+                    <button
+                      onClick={() => onTogglePantry && onTogglePantry(i)}
+                      style={{
+                        fontFamily: sans,
+                        fontSize: 11.5,
+                        fontWeight: 500,
+                        padding: "5px 9px",
+                        borderRadius: 999,
+                        border: "none",
+                        cursor: "pointer",
+                        flexShrink: 0,
+                        background: inPantry ? C.herb : C.paperDim,
+                        color: inPantry ? "#fff" : C.herbDeep,
+                        display: "flex",
+                        alignItems: "center",
                     gap: 4,
                   }}
                 >
@@ -887,6 +889,8 @@ function RecipeDetail({ recipe, onClose, pantry, onTogglePantry }) {
             );
           })}
         </ul>
+          </>
+        )}
         {recipe.instructions && (
           <>
             <h4 style={{ fontFamily: sans, fontSize: 13, fontWeight: 600, color: C.herbDeep, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.4 }}>
