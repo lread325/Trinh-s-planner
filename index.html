@@ -12,6 +12,9 @@
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
 <link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
 <style>
   html, body { margin: 0; padding: 0; background: #F3E7D6; -webkit-tap-highlight-color: transparent; }
   * { -webkit-text-size-adjust: 100%; }
@@ -51,13 +54,37 @@ const serif = "'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif"
 const sans = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
 
 const UNITS = ["", "g", "kg", "ml", "l", "tsp", "tbsp", "cup", "oz", "lb", "clove", "can", "pinch", "whole"];
-const CATEGORIES = ["Produce", "Meat & seafood", "Dairy & eggs", "Bakery", "Frozen", "Pantry", "Spices & condiments", "Beverages", "Other"];
+const CATEGORIES = ["Produce", "Meat & seafood", "Dairy & eggs", "Bakery", "Frozen", "Pantry", "Spices & condiments", "Beverages", "Household", "Other"];
 const MEALS = [
   { id: "breakfast", label: "Breakfast" },
   { id: "lunch", label: "Lunch" },
   { id: "dinner", label: "Dinner" },
 ];
 const FOLDER_COLORS = ["#C1442D", "#D68A34", "#D9A93B", "#7A8B5B", "#4F7A5A", "#3E8E8C", "#4A6FA5", "#8A5FB0", "#B0577A", "#6B4A3A"];
+
+const COMMON_ITEMS = [
+  // produce
+  "Onion", "Garlic", "Tomato", "Potato", "Carrot", "Celery", "Lemon", "Lime", "Spinach", "Lettuce",
+  "Bell pepper", "Avocado", "Banana", "Apple", "Cucumber", "Broccoli", "Mushroom", "Ginger", "Cilantro", "Basil",
+  // dairy & eggs
+  "Milk", "Eggs", "Butter", "Cheese", "Shredded cheese", "Yogurt", "Heavy cream", "Sour cream", "Cream cheese",
+  // meat & seafood
+  "Chicken breast", "Ground beef", "Bacon", "Sausage", "Shrimp", "Salmon", "Deli turkey", "Ham",
+  // bakery
+  "Bread", "Tortillas", "Bagels", "Hamburger buns",
+  // pantry
+  "Flour", "Sugar", "Brown sugar", "Salt", "Olive oil", "Vegetable oil", "Rice", "Pasta", "Black beans",
+  "Canned tomatoes", "Chicken broth", "Soy sauce", "Honey", "Baking powder", "Baking soda", "Vinegar",
+  "Peanut butter", "Cereal", "Oats", "Ketchup", "Mustard", "Mayonnaise",
+  // spices
+  "Black pepper", "Cumin", "Paprika", "Oregano", "Garlic powder", "Onion powder", "Cinnamon", "Chili powder", "Vanilla extract",
+  // beverages
+  "Coffee", "Orange juice", "Sparkling water", "Tea",
+  // frozen
+  "Frozen vegetables", "Ice cream",
+  // household
+  "Paper towels", "Dish soap", "Aluminum foil", "Plastic wrap", "Parchment paper", "Trash bags", "Dishwasher pods", "Sponges", "Napkins", "Ziploc bags",
+];
 
 // ---------- date helpers ----------
 function toISO(d) {
@@ -252,13 +279,15 @@ function parseIngredientText(text) {
 function guessCategory(name) {
   const n = (name || "").toLowerCase();
   const rules = [
+    [/paper towel|dish soap|aluminum foil|foil\b|plastic wrap|parchment|trash bag|dishwasher|sponge|napkin|ziploc|detergent/, "Household"],
     [/chicken|beef|pork|turkey|bacon|sausage|shrimp|salmon|fish|steak|lamb|ham\b/, "Meat & seafood"],
     [/milk|cheese|butter|\begg|eggs\b|yogurt|cream/, "Dairy & eggs"],
     [/onion|garlic|tomato|pepper|lettuce|carrot|potato|lemon|lime|spinach|basil|cilantro|parsley|herb|cucumber|zucchini|mushroom|avocado|apple|banana|celery|ginger/, "Produce"],
-    [/flour|sugar|salt|\boil\b|rice|pasta|broth|stock|vinegar|beans|lentil|honey|syrup|baking (soda|powder)/, "Pantry"],
+    [/frozen|ice cream/, "Frozen"],
+    [/flour|sugar|salt|\boil\b|rice|pasta|broth|stock|vinegar|beans|lentil|honey|syrup|baking (soda|powder)|peanut butter|cereal|\boats\b|ketchup|mustard|mayonnaise/, "Pantry"],
     [/bread|bun|tortilla|bagel|roll\b/, "Bakery"],
-    [/cinnamon|cumin|paprika|oregano|thyme|chili flakes|spice|vanilla|nutmeg|clove\b/, "Spices & condiments"],
-    [/wine|beer|juice|soda|sparkling water/, "Beverages"],
+    [/cinnamon|cumin|paprika|oregano|thyme|chili flakes|chili powder|spice|vanilla|nutmeg|clove\b/, "Spices & condiments"],
+    [/wine|beer|juice|soda|sparkling water|\bcoffee\b|\btea\b/, "Beverages"],
   ];
   for (const [re, cat] of rules) {
     if (re.test(n)) return cat;
@@ -444,6 +473,23 @@ function IconCheck({ size = 16, color }) {
     </svg>
   );
 }
+function IconShare({ size = 18, color }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8">
+      <path d="M12 3v12" strokeLinecap="round" />
+      <path d="M8 7l4-4 4 4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M5 12v6.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V12" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function IconSearch({ size = 17, color }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8">
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="M20 20l-4.5-4.5" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 function BearIllustration({ width = 150 }) {
   return (
@@ -609,6 +655,7 @@ function RecipeForm({ initial, onSave, onCancel, folders, onManageFolders }) {
         alignItems: "flex-end",
         justifyContent: "center",
         zIndex: 50,
+        animation: "fadeIn .15s ease-out",
       }}
       onClick={onCancel}
     >
@@ -624,6 +671,7 @@ function RecipeForm({ initial, onSave, onCancel, folders, onManageFolders }) {
           padding: "18px 18px 28px",
           boxSizing: "border-box",
           boxShadow: "0 -4px 24px rgba(74,54,38,0.18)",
+          animation: "slideUp .22s cubic-bezier(.2,.8,.2,1)",
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -845,12 +893,12 @@ function RecipeDetail({ recipe, onClose, pantry, onTogglePantry }) {
   if (!recipe) return null;
   return (
     <div
-      style={{ position: "fixed", inset: 0, background: "rgba(35,48,61,0.45)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 50 }}
+      style={{ position: "fixed", inset: 0, background: "rgba(35,48,61,0.45)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 50, animation: "fadeIn .15s ease-out" }}
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{ background: C.paper, width: "100%", maxWidth: 480, maxHeight: "85vh", overflowY: "auto", borderRadius: "20px 20px 0 0", padding: "18px 18px 28px", boxSizing: "border-box", boxShadow: "0 -4px 24px rgba(74,54,38,0.18)" }}
+        style={{ background: C.paper, width: "100%", maxWidth: 480, maxHeight: "85vh", overflowY: "auto", borderRadius: "20px 20px 0 0", padding: "18px 18px 28px", boxSizing: "border-box", boxShadow: "0 -4px 24px rgba(74,54,38,0.18)", animation: "slideUp .22s cubic-bezier(.2,.8,.2,1)" }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
           <h2 style={{ fontFamily: serif, fontSize: 21, fontWeight: 600, color: C.ink, margin: 0 }}>{recipe.name}</h2>
@@ -936,12 +984,12 @@ function AddToDayModal({ date, mealId, availableRecipes, onAdd, onClose }) {
   const mealLabel = MEALS.find((m) => m.id === mealId)?.label || "";
   return (
     <div
-      style={{ position: "fixed", inset: 0, background: "rgba(35,48,61,0.45)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 50 }}
+      style={{ position: "fixed", inset: 0, background: "rgba(35,48,61,0.45)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 50, animation: "fadeIn .15s ease-out" }}
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{ background: C.paper, width: "100%", maxWidth: 480, maxHeight: "80vh", overflowY: "auto", borderRadius: "20px 20px 0 0", padding: "18px 18px 28px", boxSizing: "border-box", boxShadow: "0 -4px 24px rgba(74,54,38,0.18)" }}
+        style={{ background: C.paper, width: "100%", maxWidth: 480, maxHeight: "80vh", overflowY: "auto", borderRadius: "20px 20px 0 0", padding: "18px 18px 28px", boxSizing: "border-box", boxShadow: "0 -4px 24px rgba(74,54,38,0.18)", animation: "slideUp .22s cubic-bezier(.2,.8,.2,1)" }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <h2 style={{ fontFamily: serif, fontSize: 19, fontWeight: 600, color: C.ink, margin: 0 }}>
@@ -1025,12 +1073,12 @@ function FolderModal({ folders, onSave, onDelete, onClose }) {
 
   return (
     <div
-      style={{ position: "fixed", inset: 0, background: "rgba(35,48,61,0.45)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 60 }}
+      style={{ position: "fixed", inset: 0, background: "rgba(35,48,61,0.45)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 60, animation: "fadeIn .15s ease-out" }}
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{ background: C.paper, width: "100%", maxWidth: 480, maxHeight: "80vh", overflowY: "auto", borderRadius: "20px 20px 0 0", padding: "18px 18px 28px", boxSizing: "border-box", boxShadow: "0 -4px 24px rgba(74,54,38,0.18)" }}
+        style={{ background: C.paper, width: "100%", maxWidth: 480, maxHeight: "80vh", overflowY: "auto", borderRadius: "20px 20px 0 0", padding: "18px 18px 28px", boxSizing: "border-box", boxShadow: "0 -4px 24px rgba(74,54,38,0.18)", animation: "slideUp .22s cubic-bezier(.2,.8,.2,1)" }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
           <h2 style={{ fontFamily: serif, fontSize: 19, fontWeight: 600, color: C.ink, margin: 0 }}>Folders</h2>
@@ -1101,6 +1149,81 @@ function FolderModal({ folders, onSave, onDelete, onClose }) {
   );
 }
 
+// ---------- Confirm delete modal ----------
+function ConfirmModal({ message, onConfirm, onCancel }) {
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(35,48,61,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 80, padding: 24, animation: "fadeIn .15s ease-out" }}
+      onClick={onCancel}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ background: C.paper, borderRadius: 16, padding: 20, maxWidth: 340, width: "100%", boxShadow: "0 8px 30px rgba(74,54,38,0.28)", animation: "popIn .16s ease-out" }}
+      >
+        <p style={{ fontSize: 15, color: C.ink, margin: "0 0 18px", lineHeight: 1.5 }}>{message}</p>
+        <div style={{ display: "flex", gap: 10 }}>
+          <Btn variant="tomato" onClick={onConfirm} style={{ flex: 1, justifyContent: "center" }}>
+            Delete
+          </Btn>
+          <Btn variant="ghost" onClick={onCancel} style={{ flex: 1, justifyContent: "center" }}>
+            Cancel
+          </Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Quick-add chip row (common items + recipe ingredients, filters as you type) ----------
+function QuickAddChips({ pool, query, onPick }) {
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const filtered = q ? pool.filter((n) => n.toLowerCase().includes(q)) : pool;
+    return filtered.slice(0, 40);
+  }, [pool, query]);
+
+  if (matches.length === 0) {
+    return (
+      <p style={{ fontSize: 12.5, color: C.inkSoft, margin: "0 0 14px" }}>No matching quick items.</p>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 6,
+        overflowX: "auto",
+        WebkitOverflowScrolling: "touch",
+        paddingBottom: 4,
+        marginBottom: 16,
+      }}
+    >
+      {matches.map((name) => (
+        <button
+          key={name}
+          onClick={() => onPick(name)}
+          style={{
+            flexShrink: 0,
+            whiteSpace: "nowrap",
+            fontFamily: sans,
+            fontSize: 13,
+            padding: "7px 12px",
+            borderRadius: 999,
+            border: "none",
+            background: C.card,
+            color: C.herbDeep,
+            boxShadow: "0 1px 2px rgba(74,54,38,0.1)",
+            cursor: "pointer",
+          }}
+        >
+          {name}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ---------- Main app ----------
 function MealPlanner() {
   const [tab, setTab] = useState("recipes");
@@ -1118,15 +1241,21 @@ function MealPlanner() {
   const [weekStart, setWeekStart] = useState(getMonday(new Date()));
   const [folderModalOpen, setFolderModalOpen] = useState(false);
   const [pantryInput, setPantryInput] = useState("");
+  const [confirmTarget, setConfirmTarget] = useState(null); // { type, id, label }
+  const [recipeSearch, setRecipeSearch] = useState("");
+  const [extraGroceryItems, setExtraGroceryItems] = useState({}); // weekKey -> [{id,name,qty,unit,category}]
+  const [groceryQuickInput, setGroceryQuickInput] = useState("");
+  const [shareStatus, setShareStatus] = useState("");
 
   useEffect(() => {
     (async () => {
-      const [rRaw, cRaw, g, f, p] = await Promise.all([
+      const [rRaw, cRaw, g, f, p, eg] = await Promise.all([
         loadKey("recipes", []),
         loadKey("calendar", {}),
         loadKey("grocery-checked", {}),
         loadKey("folders", []),
         loadKey("pantry", []),
+        loadKey("extra-grocery", {}),
       ]);
       const r = rRaw.map(migrateRecipe);
       const c = {};
@@ -1138,6 +1267,7 @@ function MealPlanner() {
       setGroceryChecked(g);
       setFolders(f);
       setPantry(p);
+      setExtraGroceryItems(eg);
       setLoaded(true);
       saveKey("recipes", r);
       saveKey("calendar", c);
@@ -1163,6 +1293,10 @@ function MealPlanner() {
   const persistPantry = useCallback((next) => {
     setPantry(next);
     saveKey("pantry", next);
+  }, []);
+  const persistExtraGrocery = useCallback((next) => {
+    setExtraGroceryItems(next);
+    saveKey("extra-grocery", next);
   }, []);
 
   function addPantryItem(text) {
@@ -1267,9 +1401,52 @@ function MealPlanner() {
     };
     persistPantry([...pantry, item]);
   }
+  function addExtraGroceryItem(text) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const parsed = parseIngredientLine(trimmed);
+    if (!parsed.name) return;
+    const key = toISO(weekStart);
+    const item = {
+      id: uid(),
+      name: parsed.name,
+      qty: parsed.qty,
+      unit: parsed.unit,
+      category: guessCategory(parsed.name),
+    };
+    const list = extraGroceryItems[key] || [];
+    persistExtraGrocery({ ...extraGroceryItems, [key]: [...list, item] });
+  }
+  function removeExtraGroceryItem(id) {
+    const key = toISO(weekStart);
+    const list = extraGroceryItems[key] || [];
+    persistExtraGrocery({ ...extraGroceryItems, [key]: list.filter((i) => i.id !== id) });
+  }
+
+  function requestDelete(type, id, label) {
+    setConfirmTarget({ type, id, label });
+  }
+  function confirmDelete() {
+    if (!confirmTarget) return;
+    if (confirmTarget.type === "recipe") deleteRecipe(confirmTarget.id);
+    else if (confirmTarget.type === "folder") deleteFolder(confirmTarget.id);
+    else if (confirmTarget.type === "pantry") removePantryItem(confirmTarget.id);
+    setConfirmTarget(null);
+  }
 
   const recipesById = useMemo(() => Object.fromEntries(recipes.map((r) => [r.id, r])), [recipes]);
   const recipeGroups = useMemo(() => groupByFolder(recipes, folders), [recipes, folders]);
+  const filteredRecipes = useMemo(() => {
+    const q = recipeSearch.trim().toLowerCase();
+    return q ? recipes.filter((r) => r.name.toLowerCase().includes(q)) : recipes;
+  }, [recipes, recipeSearch]);
+  const filteredRecipeGroups = useMemo(() => groupByFolder(filteredRecipes, folders), [filteredRecipes, folders]);
+  const allKnownItems = useMemo(() => {
+    const map = new Map();
+    COMMON_ITEMS.forEach((n) => map.set(n.toLowerCase(), n));
+    recipes.forEach((r) => r.ingredients.forEach((i) => { if (i.name) map.set(i.name.toLowerCase(), i.name); }));
+    return Array.from(map.values()).sort((a, b) => a.localeCompare(b));
+  }, [recipes]);
   const weekDates = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
 
   const pantryByName = useMemo(() => {
@@ -1315,6 +1492,20 @@ function MealPlanner() {
       });
     });
 
+    // fold in manually-added extra items for this week
+    const extras = extraGroceryItems[toISO(weekStart)] || [];
+    extras.forEach((ing) => {
+      const key = `${ing.name.toLowerCase()}|${ing.unit || ""}`;
+      if (!totals[key]) {
+        totals[key] = { name: ing.name, unit: ing.unit || "", qty: 0, hasQty: false, category: ing.category || "Other" };
+      }
+      const n = parseQty(ing.qty);
+      if (!isNaN(n)) {
+        totals[key].qty += n;
+        totals[key].hasQty = true;
+      }
+    });
+
     // subtract what's already in the pantry
     Object.keys(totals).forEach((key) => {
       const item = totals[key];
@@ -1340,7 +1531,7 @@ function MealPlanner() {
     return Object.entries(totals)
       .map(([key, v]) => ({ key, ...v }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [calendar, weekDates, recipesById, pantryByName]);
+  }, [calendar, weekDates, recipesById, pantryByName, extraGroceryItems, weekStart]);
 
   const groupedGrocery = useMemo(() => {
     const groups = {};
@@ -1353,6 +1544,42 @@ function MealPlanner() {
   }, [groceryList]);
 
   const weekKey = toISO(weekStart);
+
+  function buildShareText() {
+    const lines = [`Grocery List — ${fmtDate(weekStart)} – ${fmtDate(addDays(weekStart, 6))}`, ""];
+    groupedGrocery.forEach((group) => {
+      lines.push(group.cat.toUpperCase());
+      group.items.forEach((item) => {
+        const checkKey = `${weekKey}::${item.key}`;
+        const checked = !!groceryChecked[checkKey];
+        const qtyStr = item.hasQty ? `${formatQty(item.qty)} ${item.unit} ` : "";
+        lines.push(`${checked ? "✓" : "•"} ${qtyStr}${item.name}`);
+      });
+      lines.push("");
+    });
+    return lines.join("\n").trim();
+  }
+
+  async function handleShare() {
+    const text = buildShareText();
+    if (!text) return;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: "Grocery List", text });
+      } catch (e) {
+        // person canceled the share sheet - nothing to do
+      }
+    } else if (navigator.clipboard) {
+      try {
+        await navigator.clipboard.writeText(text);
+        setShareStatus("Copied to clipboard!");
+        setTimeout(() => setShareStatus(""), 2500);
+      } catch (e) {
+        setShareStatus("Couldn't copy — try selecting the list manually.");
+        setTimeout(() => setShareStatus(""), 3000);
+      }
+    }
+  }
 
   if (!loaded) {
     return <div style={{ padding: 40, textAlign: "center", color: C.inkSoft, fontFamily: sans }}>Loading your kitchen…</div>;
@@ -1368,6 +1595,12 @@ function MealPlanner() {
 
   return (
     <div style={{ background: C.paper, minHeight: 500, fontFamily: sans, maxWidth: 480, margin: "0 auto", position: "relative", paddingBottom: 64 }}>
+      <style>{`
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideUp { from { transform: translateY(18px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes popIn { from { transform: scale(0.94); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        @keyframes tabFade { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+      `}</style>
       <div
         style={{
           position: "relative",
@@ -1408,10 +1641,10 @@ function MealPlanner() {
         </div>
       </div>
 
-      <div style={{ padding: "14px 16px 20px" }}>
+      <div key={tab} style={{ padding: "14px 16px 20px", animation: "tabFade .18s ease-out" }}>
         {tab === "recipes" && (
           <div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
               <Btn variant="primary" onClick={() => { setEditingRecipe(null); setFormOpen(true); }}>
                 <IconPlus size={16} color="#fff" /> New recipe
               </Btn>
@@ -1419,20 +1652,41 @@ function MealPlanner() {
                 Folders
               </Btn>
             </div>
-            {recipes.length === 0 ? (
-              <EmptyState text="No recipes yet. Add your first one to start building your menu." />
+            <div style={{ position: "relative", marginBottom: 14 }}>
+              <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>
+                <IconSearch size={16} color={C.inkSoft} />
+              </span>
+              <input
+                style={{
+                  width: "100%",
+                  fontFamily: sans,
+                  fontSize: 15,
+                  padding: "10px 12px 10px 36px",
+                  borderRadius: 10,
+                  border: `1px solid ${C.line}`,
+                  background: "#fff",
+                  color: C.ink,
+                  boxSizing: "border-box",
+                }}
+                placeholder="Search recipes"
+                value={recipeSearch}
+                onChange={(e) => setRecipeSearch(e.target.value)}
+              />
+            </div>
+            {filteredRecipes.length === 0 ? (
+              <EmptyState text={recipes.length === 0 ? "No recipes yet. Add your first one to start building your menu." : "No recipes match that search."} />
             ) : folders.length === 0 ? (
-              recipes.map((r) => (
+              filteredRecipes.map((r) => (
                 <RecipeCard
                   key={r.id}
                   recipe={r}
                   onEdit={(rec) => { setEditingRecipe(rec); setFormOpen(true); }}
-                  onDelete={deleteRecipe}
+                  onDelete={() => requestDelete("recipe", r.id, r.name)}
                   onOpen={setViewingRecipe}
                 />
               ))
             ) : (
-              recipeGroups.map((group) => (
+              filteredRecipeGroups.map((group) => (
                 <div key={group.folder ? group.folder.id : "unfiled"} style={{ marginBottom: 18 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 8 }}>
                     <span style={{ width: 11, height: 11, borderRadius: "50%", background: group.folder ? group.folder.color : C.line, flexShrink: 0 }} />
@@ -1448,7 +1702,7 @@ function MealPlanner() {
                         key={r.id}
                         recipe={r}
                         onEdit={(rec) => { setEditingRecipe(rec); setFormOpen(true); }}
-                        onDelete={deleteRecipe}
+                        onDelete={() => requestDelete("recipe", r.id, r.name)}
                         onOpen={setViewingRecipe}
                         folderColor={group.folder ? group.folder.color : null}
                       />
@@ -1476,7 +1730,7 @@ function MealPlanner() {
                   key={r.id}
                   recipe={r}
                   onEdit={(rec) => { setEditingRecipe(rec); setFormOpen(true); }}
-                  onDelete={deleteRecipe}
+                  onDelete={() => requestDelete("recipe", r.id, r.name)}
                   onOpen={setViewingRecipe}
                 />
               ))
@@ -1497,7 +1751,7 @@ function MealPlanner() {
                         key={r.id}
                         recipe={r}
                         onEdit={(rec) => { setEditingRecipe(rec); setFormOpen(true); }}
-                        onDelete={deleteRecipe}
+                        onDelete={() => requestDelete("recipe", r.id, r.name)}
                         onOpen={setViewingRecipe}
                         folderColor={group.folder ? group.folder.color : null}
                       />
@@ -1567,9 +1821,88 @@ function MealPlanner() {
         {tab === "grocery" && (
           <div>
             <WeekNav weekStart={weekStart} setWeekStart={setWeekStart} />
-            <p style={{ fontSize: 13, color: C.inkSoft, margin: "0 0 14px" }}>
-              Everything needed for the week of {fmtDate(weekStart)} – {fmtDate(addDays(weekStart, 6))}, minus what's already in your pantry.
-            </p>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 14 }}>
+              <p style={{ fontSize: 13, color: C.inkSoft, margin: 0, flex: 1 }}>
+                Everything needed for the week of {fmtDate(weekStart)} – {fmtDate(addDays(weekStart, 6))}, minus what's already in your pantry.
+              </p>
+              <Btn variant="ghost" onClick={handleShare} style={{ flexShrink: 0, padding: "8px 12px" }}>
+                <IconShare size={15} color={C.ink} /> Share
+              </Btn>
+            </div>
+            {shareStatus && <p style={{ fontSize: 12.5, color: C.herbDeep, margin: "-8px 0 12px" }}>{shareStatus}</p>}
+
+            <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+              <input
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  fontFamily: sans,
+                  fontSize: 15,
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  border: `1px solid ${C.line}`,
+                  background: "#fff",
+                  color: C.ink,
+                  boxSizing: "border-box",
+                }}
+                placeholder="Add something extra, e.g. paper towels"
+                value={groceryQuickInput}
+                onChange={(e) => setGroceryQuickInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    addExtraGroceryItem(groceryQuickInput);
+                    setGroceryQuickInput("");
+                  }
+                }}
+              />
+              <Btn
+                variant="primary"
+                onClick={() => {
+                  addExtraGroceryItem(groceryQuickInput);
+                  setGroceryQuickInput("");
+                }}
+              >
+                Add
+              </Btn>
+            </div>
+            <QuickAddChips
+              pool={allKnownItems}
+              query={groceryQuickInput}
+              onPick={(name) => {
+                addExtraGroceryItem(name);
+                setGroceryQuickInput("");
+              }}
+            />
+
+            {(extraGroceryItems[weekKey] || []).length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
+                {(extraGroceryItems[weekKey] || []).map((item) => (
+                  <span
+                    key={item.id}
+                    style={{
+                      background: C.paperDim,
+                      borderRadius: 20,
+                      padding: "5px 10px",
+                      fontSize: 12.5,
+                      color: C.ink,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                  >
+                    {item.name}
+                    <button
+                      onClick={() => removeExtraGroceryItem(item.id)}
+                      style={{ background: "none", border: "none", cursor: "pointer", padding: 0, lineHeight: 0 }}
+                      aria-label="Remove"
+                    >
+                      <IconX size={12} color={C.inkSoft} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
             {groupedGrocery.length === 0 ? (
               <EmptyState text="Nothing left to buy — either nothing's planned for this week, or your pantry already covers it." />
             ) : (
@@ -1667,6 +2000,15 @@ function MealPlanner() {
               </Btn>
             </div>
 
+            <QuickAddChips
+              pool={allKnownItems}
+              query={pantryInput}
+              onPick={(name) => {
+                addPantryItem(name);
+                setPantryInput("");
+              }}
+            />
+
             {pantry.length === 0 ? (
               <EmptyState text="Your pantry is empty. Add staples you already have so they're skipped on your grocery list." />
             ) : (
@@ -1716,7 +2058,7 @@ function MealPlanner() {
                             <IconPlus size={14} color={C.herbDeep} />
                           </button>
                           <button
-                            onClick={() => removePantryItem(item.id)}
+                            onClick={() => requestDelete("pantry", item.id, item.name)}
                             aria-label="Remove from pantry"
                             style={{ background: "none", border: "none", cursor: "pointer", padding: 4, flexShrink: 0 }}
                           >
@@ -1754,8 +2096,15 @@ function MealPlanner() {
         <FolderModal
           folders={folders}
           onSave={saveFolder}
-          onDelete={deleteFolder}
+          onDelete={(id) => requestDelete("folder", id, folders.find((f) => f.id === id)?.name || "this folder")}
           onClose={() => setFolderModalOpen(false)}
+        />
+      )}
+      {confirmTarget && (
+        <ConfirmModal
+          message={`Delete "${confirmTarget.label}"? This can't be undone.`}
+          onConfirm={confirmDelete}
+          onCancel={() => setConfirmTarget(null)}
         />
       )}
       {addToDayTarget && (
