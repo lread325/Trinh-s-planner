@@ -490,6 +490,32 @@ function IconSearch({ size = 17, color }) {
     </svg>
   );
 }
+function IconUndo({ size = 15, color }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+      <path d="M8 7L4 11l4 4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4 11h11a5 5 0 0 1 0 10h-2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function IconDownload({ size = 16, color }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8">
+      <path d="M12 3v12" strokeLinecap="round" />
+      <path d="M7.5 10.5L12 15l4.5-4.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M5 19.5h14" strokeLinecap="round" />
+    </svg>
+  );
+}
+function IconUpload({ size = 16, color }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8">
+      <path d="M12 15V3" strokeLinecap="round" />
+      <path d="M7.5 7.5L12 3l4.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M5 19.5h14" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 function BearIllustration({ width = 150 }) {
   return (
@@ -1169,6 +1195,47 @@ function ConfirmModal({ message, onConfirm, onCancel }) {
             Cancel
           </Btn>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ImportPreviewModal({ data, error, onMerge, onReplace, onCancel }) {
+  const counts = {
+    recipes: (data?.recipes || []).length,
+    folders: (data?.folders || []).length,
+    pantry: (data?.pantry || []).length,
+  };
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(35,48,61,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 80, padding: 24, animation: "fadeIn .15s ease-out" }}
+      onClick={onCancel}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ background: C.paper, borderRadius: 16, padding: 20, maxWidth: 360, width: "100%", boxShadow: "0 8px 30px rgba(74,54,38,0.28)", animation: "popIn .16s ease-out" }}
+      >
+        <h2 style={{ fontFamily: serif, fontSize: 19, fontWeight: 600, color: C.ink, margin: "0 0 10px" }}>Import backup</h2>
+        {error ? (
+          <p style={{ fontSize: 14.5, color: C.tomatoDeep, margin: "0 0 18px" }}>{error}</p>
+        ) : (
+          <>
+            <p style={{ fontSize: 14.5, color: C.ink, margin: "0 0 18px", lineHeight: 1.5 }}>
+              This file has {counts.recipes} recipe{counts.recipes === 1 ? "" : "s"}, {counts.folders} folder{counts.folders === 1 ? "" : "s"}, and {counts.pantry} pantry item{counts.pantry === 1 ? "" : "s"}. How should it be added?
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 }}>
+              <Btn variant="primary" onClick={onMerge} style={{ justifyContent: "center" }}>
+                Merge with mine
+              </Btn>
+              <Btn variant="tomato" onClick={onReplace} style={{ justifyContent: "center" }}>
+                Replace everything
+              </Btn>
+            </div>
+          </>
+        )}
+        <Btn variant="ghost" onClick={onCancel} style={{ justifyContent: "center", width: "100%" }}>
+          Cancel
+        </Btn>
       </div>
     </div>
   );
@@ -1876,6 +1943,11 @@ function MealPlanner() {
   const [groceryDismissed, setGroceryDismissed] = useState({}); // "weekKey::itemKey" -> true
   const [view, setView] = useState("main"); // "main" | "timer"
   const [flipCount, setFlipCount] = useState(0);
+  const [pantryUndo, setPantryUndo] = useState([]); // [{id, label, item}]
+  const [groceryUndo, setGroceryUndo] = useState([]); // [{id, label, dismissKey}]
+  const [importPreview, setImportPreview] = useState(null);
+  const [importError, setImportError] = useState("");
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     (async () => {
@@ -1934,9 +2006,24 @@ function MealPlanner() {
     setGroceryDismissed(next);
     saveKey("grocery-dismissed", next);
   }, []);
-  function dismissGroceryItem(itemKey) {
+  function dismissGroceryItem(itemKey, itemName) {
     const dismissKey = `${toISO(weekStart)}::${itemKey}`;
     persistGroceryDismissed({ ...groceryDismissed, [dismissKey]: true });
+    setGroceryUndo((prev) => [...prev, { id: uid(), label: itemName, dismissKey }]);
+  }
+  function undoGroceryDismiss(entryId) {
+    setGroceryUndo((prev) => {
+      const entry = prev.find((e) => e.id === entryId);
+      if (entry) {
+        setGroceryDismissed((gd) => {
+          const next = { ...gd };
+          delete next[entry.dismissKey];
+          saveKey("grocery-dismissed", next);
+          return next;
+        });
+      }
+      return prev.filter((e) => e.id !== entryId);
+    });
   }
 
   function addPantryItem(text) {
@@ -2070,8 +2157,147 @@ function MealPlanner() {
     if (!confirmTarget) return;
     if (confirmTarget.type === "recipe") deleteRecipe(confirmTarget.id);
     else if (confirmTarget.type === "folder") deleteFolder(confirmTarget.id);
-    else if (confirmTarget.type === "pantry") removePantryItem(confirmTarget.id);
+    else if (confirmTarget.type === "pantry") {
+      const item = pantry.find((p) => p.id === confirmTarget.id);
+      removePantryItem(confirmTarget.id);
+      if (item) {
+        setPantryUndo((prev) => [...prev, { id: uid(), label: item.name, item }]);
+      }
+    }
     setConfirmTarget(null);
+  }
+  function undoPantryRemove(entryId) {
+    setPantryUndo((prev) => {
+      const entry = prev.find((e) => e.id === entryId);
+      if (entry) {
+        setPantry((p) => {
+          const next = [...p, entry.item];
+          saveKey("pantry", next);
+          return next;
+        });
+      }
+      return prev.filter((e) => e.id !== entryId);
+    });
+  }
+
+  function buildExportData() {
+    return {
+      app: "trinhs-planner",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      recipes,
+      calendar,
+      groceryChecked,
+      folders,
+      pantry,
+      extraGroceryItems,
+      groceryDismissed,
+    };
+  }
+  async function handleExport() {
+    const data = buildExportData();
+    const json = JSON.stringify(data, null, 2);
+    const filename = `trinhs-planner-backup-${toISO(new Date())}.json`;
+    try {
+      const file = new File([json], filename, { type: "application/json" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: "Trinh's Planner backup" });
+        return;
+      }
+    } catch (e) {
+      // fall through to plain download
+    }
+    try {
+      const url = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      // nothing more we can do here
+    }
+  }
+  function handleImportFileSelected(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if (!data || typeof data !== "object") throw new Error("bad format");
+        setImportPreview(data);
+        setImportError("");
+      } catch (err) {
+        setImportPreview({});
+        setImportError("That file doesn't look like a valid Trinh's Planner backup.");
+      }
+    };
+    reader.onerror = () => {
+      setImportPreview({});
+      setImportError("Couldn't read that file.");
+    };
+    reader.readAsText(file);
+  }
+  function applyImportReplace() {
+    const data = importPreview;
+    if (!data) return;
+    const r = (data.recipes || []).map(migrateRecipe);
+    const c = {};
+    Object.entries(data.calendar || {}).forEach(([date, entry]) => {
+      c[date] = migrateDayEntry(entry);
+    });
+    persistRecipes(r);
+    persistCalendar(c);
+    persistGrocery(data.groceryChecked || {});
+    persistFolders(data.folders || []);
+    persistPantry(data.pantry || []);
+    persistExtraGrocery(data.extraGroceryItems || {});
+    persistGroceryDismissed(data.groceryDismissed || {});
+    setImportPreview(null);
+  }
+  function applyImportMerge() {
+    const data = importPreview;
+    if (!data) return;
+
+    const existingRecipeIds = new Set(recipes.map((r) => r.id));
+    const incomingRecipes = (data.recipes || []).map(migrateRecipe).filter((r) => !existingRecipeIds.has(r.id));
+    persistRecipes([...recipes, ...incomingRecipes]);
+
+    const existingFolderIds = new Set(folders.map((f) => f.id));
+    const incomingFolders = (data.folders || []).filter((f) => !existingFolderIds.has(f.id));
+    persistFolders([...folders, ...incomingFolders]);
+
+    const existingPantryIds = new Set(pantry.map((p) => p.id));
+    const incomingPantry = (data.pantry || []).filter((p) => !existingPantryIds.has(p.id));
+    persistPantry([...pantry, ...incomingPantry]);
+
+    const mergedCalendar = { ...calendar };
+    Object.entries(data.calendar || {}).forEach(([date, rawEntry]) => {
+      const entry = migrateDayEntry(rawEntry);
+      const existing = mergedCalendar[date] || { breakfast: [], lunch: [], dinner: [] };
+      mergedCalendar[date] = {
+        breakfast: Array.from(new Set([...existing.breakfast, ...entry.breakfast])),
+        lunch: Array.from(new Set([...existing.lunch, ...entry.lunch])),
+        dinner: Array.from(new Set([...existing.dinner, ...entry.dinner])),
+      };
+    });
+    persistCalendar(mergedCalendar);
+
+    persistGrocery({ ...groceryChecked, ...(data.groceryChecked || {}) });
+    persistGroceryDismissed({ ...groceryDismissed, ...(data.groceryDismissed || {}) });
+
+    const mergedExtra = { ...extraGroceryItems };
+    Object.entries(data.extraGroceryItems || {}).forEach(([wk, items]) => {
+      const existingIds = new Set((mergedExtra[wk] || []).map((i) => i.id));
+      mergedExtra[wk] = [...(mergedExtra[wk] || []), ...(items || []).filter((i) => !existingIds.has(i.id))];
+    });
+    persistExtraGrocery(mergedExtra);
+
+    setImportPreview(null);
   }
 
   const recipesById = useMemo(() => Object.fromEntries(recipes.map((r) => [r.id, r])), [recipes]);
@@ -2314,13 +2540,26 @@ function MealPlanner() {
       <div key={tab} style={{ padding: "14px 16px 20px", animation: "tabFade .18s ease-out" }}>
         {tab === "recipes" && (
           <div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
               <Btn variant="primary" onClick={() => { setEditingRecipe(null); setFormOpen(true); }}>
                 <IconPlus size={16} color="#fff" /> New recipe
               </Btn>
               <Btn variant="ghost" onClick={() => setFolderModalOpen(true)}>
                 Folders
               </Btn>
+              <Btn variant="ghost" onClick={handleExport}>
+                <IconDownload size={15} color={C.ink} /> Export
+              </Btn>
+              <Btn variant="ghost" onClick={() => fileInputRef.current && fileInputRef.current.click()}>
+                <IconUpload size={15} color={C.ink} /> Import
+              </Btn>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/json,.json"
+                onChange={handleImportFileSelected}
+                style={{ display: "none" }}
+              />
             </div>
             <div style={{ position: "relative", marginBottom: 14 }}>
               <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>
@@ -2524,6 +2763,38 @@ function MealPlanner() {
               </div>
             )}
 
+            {groceryUndo.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <p style={{ fontSize: 12, fontWeight: 600, color: C.inkSoft, textTransform: "uppercase", letterSpacing: 0.4, margin: "0 0 6px" }}>
+                  Recently removed
+                </p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {groceryUndo.map((entry) => (
+                    <button
+                      key={entry.id}
+                      onClick={() => undoGroceryDismiss(entry.id)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        background: C.card,
+                        border: "none",
+                        boxShadow: "0 1px 2px rgba(74,54,38,0.1)",
+                        borderRadius: 999,
+                        padding: "6px 11px",
+                        fontFamily: sans,
+                        fontSize: 12.5,
+                        color: C.herbDeep,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <IconUndo size={13} color={C.herbDeep} /> {entry.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {groupedGrocery.length === 0 ? (
               <EmptyState text="Nothing left to buy — either nothing's planned for this week, or your pantry already covers it." />
             ) : (
@@ -2541,7 +2812,7 @@ function MealPlanner() {
                           key={item.key}
                           style={{ borderBottom: idx < group.items.length - 1 ? `1px solid ${C.paperDim}` : "none" }}
                         >
-                          <SwipeableRow onDelete={() => dismissGroceryItem(item.key)} deleteLabel="Skip">
+                          <SwipeableRow onDelete={() => dismissGroceryItem(item.key, item.name)} deleteLabel="Skip">
                             <div
                               onClick={() => persistGrocery({ ...groceryChecked, [checkKey]: !checked })}
                               style={{
@@ -2634,6 +2905,38 @@ function MealPlanner() {
                 setPantryInput("");
               }}
             />
+
+            {pantryUndo.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <p style={{ fontSize: 12, fontWeight: 600, color: C.inkSoft, textTransform: "uppercase", letterSpacing: 0.4, margin: "0 0 6px" }}>
+                  Recently removed
+                </p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {pantryUndo.map((entry) => (
+                    <button
+                      key={entry.id}
+                      onClick={() => undoPantryRemove(entry.id)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        background: C.card,
+                        border: "none",
+                        boxShadow: "0 1px 2px rgba(74,54,38,0.1)",
+                        borderRadius: 999,
+                        padding: "6px 11px",
+                        fontFamily: sans,
+                        fontSize: 12.5,
+                        color: C.herbDeep,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <IconUndo size={13} color={C.herbDeep} /> {entry.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {pantry.length === 0 ? (
               <EmptyState text="Your pantry is empty. Add staples you already have so they're skipped on your grocery list." />
@@ -2730,6 +3033,15 @@ function MealPlanner() {
           message={`Delete "${confirmTarget.label}"? This can't be undone.`}
           onConfirm={confirmDelete}
           onCancel={() => setConfirmTarget(null)}
+        />
+      )}
+      {importPreview && (
+        <ImportPreviewModal
+          data={importPreview}
+          error={importError}
+          onMerge={applyImportMerge}
+          onReplace={applyImportReplace}
+          onCancel={() => { setImportPreview(null); setImportError(""); }}
         />
       )}
       {addToDayTarget && (
