@@ -501,6 +501,31 @@ function IconGrip({ size = 16, color }) {
 }
 
 function BearIllustration({ width = 150 }) {
+  const [blinking, setBlinking] = useState(false);
+  useEffect(() => {
+    let closeTimeout;
+    let scheduleTimeout;
+    function scheduleBlink() {
+      const delay = 10000 + Math.random() * 5000;
+      scheduleTimeout = setTimeout(() => {
+        setBlinking(true);
+        closeTimeout = setTimeout(() => setBlinking(false), 140);
+        scheduleBlink();
+      }, delay);
+    }
+    scheduleBlink();
+    return () => {
+      clearTimeout(scheduleTimeout);
+      clearTimeout(closeTimeout);
+    };
+  }, []);
+
+  const eyeStyle = (cx, cy) => ({
+    transformOrigin: `${cx}px ${cy}px`,
+    transform: blinking ? "scaleY(0.12)" : "scaleY(1)",
+    transition: "transform .1s ease-in-out",
+  });
+
   return (
     <svg width={width} height={width} viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
       <circle cx="46" cy="56" r="26" fill={C.bearFur} stroke={C.herbDeep} strokeWidth="3" />
@@ -508,8 +533,8 @@ function BearIllustration({ width = 150 }) {
       <circle cx="46" cy="57" r="11" fill={C.bearFurLight} />
       <circle cx="154" cy="57" r="11" fill={C.bearFurLight} />
       <circle cx="100" cy="108" r="72" fill={C.bearFur} stroke={C.herbDeep} strokeWidth="3" />
-      <circle cx="72" cy="102" r="6" fill={C.herbDeep} />
-      <circle cx="128" cy="102" r="6" fill={C.herbDeep} />
+      <circle cx="72" cy="102" r="6" fill={C.herbDeep} style={eyeStyle(72, 102)} />
+      <circle cx="128" cy="102" r="6" fill={C.herbDeep} style={eyeStyle(128, 102)} />
       <circle cx="60" cy="122" r="9" fill={C.bearBlush} opacity="0.7" />
       <circle cx="140" cy="122" r="9" fill={C.bearBlush} opacity="0.7" />
       <ellipse cx="100" cy="128" rx="20" ry="14" fill={C.bearMuzzle} />
@@ -866,7 +891,7 @@ function RecipeForm({ initial, onSave, onCancel, folders, onManageFolders }) {
 }
 
 // ---------- Recipe card ----------
-function RecipeCard({ recipe, onEdit, onDelete, onOpen, folderColor, onDragHandleStart, onDragMove, onDragEnd, dragging }) {
+function RecipeCard({ recipe, onEdit, onDelete, onOpen, folderColor, onDragHandleStart, onDragMove, onDragEnd, dragging, index }) {
   return (
     <div
       style={{
@@ -880,6 +905,9 @@ function RecipeCard({ recipe, onEdit, onDelete, onOpen, folderColor, onDragHandl
         display: "flex",
         alignItems: "center",
         gap: 8,
+        ...(typeof index === "number"
+          ? { animation: "listItemIn .32s ease-out backwards", animationDelay: `${Math.min(index * 35, 300)}ms` }
+          : {}),
       }}
     >
       {onDragHandleStart && (
@@ -1302,6 +1330,51 @@ function QuickAddChips({ pool, query, onPick }) {
 }
 
 // ---------- Swipe-to-delete row wrapper ----------
+function ConfettiBurst() {
+  const pieces = useMemo(() => {
+    const colors = [C.tomato, C.herb, C.butter, C.bearFurDeep, "#4A6FA5"];
+    return Array.from({ length: 26 }, (_, i) => {
+      const angle = Math.random() * Math.PI * 2;
+      const distance = 60 + Math.random() * 90;
+      const dx = Math.cos(angle) * distance;
+      const dy = Math.sin(angle) * distance * 0.4 + 130;
+      return {
+        id: i,
+        color: colors[i % colors.length],
+        left: 42 + Math.random() * 16,
+        delay: Math.random() * 0.15,
+        dx,
+        dy,
+        rotate: Math.random() * 360,
+        size: 6 + Math.random() * 5,
+      };
+    });
+  }, []);
+  return (
+    <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 70, overflow: "hidden" }}>
+      {pieces.map((p) => (
+        <span
+          key={p.id}
+          style={{
+            position: "absolute",
+            top: "26%",
+            left: `${p.left}%`,
+            width: p.size,
+            height: p.size * 1.4,
+            background: p.color,
+            borderRadius: 2,
+            opacity: 0,
+            animation: `confettiPiece 1.3s ease-out ${p.delay}s forwards`,
+            "--dx": `${p.dx}px`,
+            "--dy": `${p.dy}px`,
+            "--rot": `${p.rotate}deg`,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
 function DragGhost({ x, y, label }) {
   return (
     <div
@@ -1990,6 +2063,9 @@ export default function MealPlanner() {
   const [draggingRecipe, setDraggingRecipe] = useState(null); // { id, name }
   const [dragPos, setDragPos] = useState({ x: 0, y: 0 });
   const [dragOverFolder, setDragOverFolder] = useState(null); // folder id, "unfiled", or null
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [vanishingPantryIds, setVanishingPantryIds] = useState([]);
+  const prevAllCheckedRef = useRef(false);
 
   useEffect(() => {
     (async () => {
@@ -2097,15 +2173,23 @@ export default function MealPlanner() {
     }
   }
   function adjustPantryQty(id, delta) {
-    const next = pantry
-      .map((p) => {
-        if (p.id !== id) return p;
-        const current = isNaN(parseQty(String(p.qty))) ? 0 : parseQty(String(p.qty));
-        const updated = current + delta;
-        return { ...p, qty: updated };
-      })
-      .filter((p) => p.id !== id || parseQty(String(p.qty)) > 0);
-    persistPantry(next);
+    const current = pantry.find((p) => p.id === id);
+    if (!current) return;
+    const currentQty = isNaN(parseQty(String(current.qty))) ? 0 : parseQty(String(current.qty));
+    const updated = currentQty + delta;
+    if (updated <= 0) {
+      setVanishingPantryIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+      setTimeout(() => {
+        setPantry((prev) => {
+          const next = prev.filter((p) => p.id !== id);
+          saveKey("pantry", next);
+          return next;
+        });
+        setVanishingPantryIds((prev) => prev.filter((v) => v !== id));
+      }, 260);
+    } else {
+      persistPantry(pantry.map((p) => (p.id === id ? { ...p, qty: updated } : p)));
+    }
   }
   function removePantryItem(id) {
     persistPantry(pantry.filter((p) => p.id !== id));
@@ -2505,6 +2589,17 @@ export default function MealPlanner() {
 
   const weekKey = toISO(weekStart);
 
+  const allGroceryChecked = groceryList.length > 0 && groceryList.every((item) => groceryChecked[`${weekKey}::${item.key}`]);
+  useEffect(() => {
+    const wasAllChecked = prevAllCheckedRef.current;
+    prevAllCheckedRef.current = allGroceryChecked;
+    if (allGroceryChecked && !wasAllChecked) {
+      setShowConfetti(true);
+      const t = setTimeout(() => setShowConfetti(false), 1600);
+      return () => clearTimeout(t);
+    }
+  }, [allGroceryChecked]);
+
   function buildShareText() {
     const lines = [`Grocery List — ${fmtDate(weekStart)} – ${fmtDate(addDays(weekStart, 6))}`, ""];
     groupedGrocery.forEach((group) => {
@@ -2561,6 +2656,20 @@ export default function MealPlanner() {
         @keyframes popIn { from { transform: scale(0.94); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         @keyframes tabFade { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes flipSpin { 0% { transform: rotateY(0deg); } 100% { transform: rotateY(360deg); } }
+        @keyframes confettiPiece {
+          0% { transform: translate(0,0) rotate(0deg); opacity: 1; }
+          100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); opacity: 0; }
+        }
+        @keyframes bearBob {
+          0%, 100% { transform: translateY(0) rotate(0deg); }
+          50% { transform: translateY(-6px) rotate(-3deg); }
+        }
+        @keyframes listItemIn {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .stepper-btn { transition: transform .12s ease-out; }
+        .stepper-btn:active { transform: scale(0.82); }
       `}</style>
       <div
         style={{
@@ -2678,13 +2787,14 @@ export default function MealPlanner() {
             {filteredRecipes.length === 0 ? (
               <EmptyState text={recipes.length === 0 ? "No recipes yet. Add your first one to start building your menu." : "No recipes match that search."} />
             ) : folders.length === 0 ? (
-              filteredRecipes.map((r) => (
+              filteredRecipes.map((r, idx) => (
                 <RecipeCard
                   key={r.id}
                   recipe={r}
                   onEdit={(rec) => { setEditingRecipe(rec); setFormOpen(true); }}
                   onDelete={() => requestDelete("recipe", r.id, r.name)}
                   onOpen={setViewingRecipe}
+                  index={idx}
                 />
               ))
             ) : (
@@ -2720,7 +2830,7 @@ export default function MealPlanner() {
                           {isOver ? "Drop here" : "No recipes in this folder yet."}
                         </p>
                       ) : (
-                        group.recipes.map((r) => (
+                        group.recipes.map((r, idx) => (
                           <RecipeCard
                             key={r.id}
                             recipe={r}
@@ -2732,6 +2842,7 @@ export default function MealPlanner() {
                             onDragMove={updateRecipeDrag}
                             onDragEnd={endRecipeDrag}
                             dragging={draggingRecipe?.id === r.id}
+                            index={idx}
                           />
                         ))
                       )}
@@ -2743,6 +2854,7 @@ export default function MealPlanner() {
           </div>
         )}
         {draggingRecipe && <DragGhost x={dragPos.x} y={dragPos.y} label={draggingRecipe.name} />}
+        {showConfetti && <ConfettiBurst />}
 
         {tab === "calendar" && (
           <div>
@@ -3060,7 +3172,14 @@ export default function MealPlanner() {
             )}
 
             {pantry.length === 0 ? (
-              <EmptyState text="Your pantry is empty. Add staples you already have so they're skipped on your grocery list." />
+              <div style={{ textAlign: "center", padding: "30px 16px", border: `1px dashed ${C.line}`, borderRadius: 12 }}>
+                <div style={{ display: "inline-block", animation: "bearBob 2.4s ease-in-out infinite" }}>
+                  <BearIllustration width={64} />
+                </div>
+                <p style={{ fontSize: 14, color: C.inkSoft, marginTop: 10, marginBottom: 0 }}>
+                  Your pantry is empty. Add staples you already have so they're skipped on your grocery list.
+                </p>
+              </div>
             ) : (
               pantryGroups.map((group) => (
                 <div key={group.cat} style={{ marginBottom: 16 }}>
@@ -3071,6 +3190,7 @@ export default function MealPlanner() {
                     {group.items.map((item, idx) => {
                       const qtyNum = parseQty(String(item.qty));
                       const hasQty = !isNaN(qtyNum) && String(item.qty).trim() !== "";
+                      const isVanishing = vanishingPantryIds.includes(item.id);
                       return (
                         <div
                           key={item.id}
@@ -3083,6 +3203,10 @@ export default function MealPlanner() {
                                 alignItems: "center",
                                 gap: 10,
                                 padding: "10px 13px",
+                                opacity: isVanishing ? 0 : 1,
+                                transform: isVanishing ? "scale(0.85)" : "scale(1)",
+                                transition: "opacity .25s ease-out, transform .25s ease-out",
+                                pointerEvents: isVanishing ? "none" : "auto",
                               }}
                             >
                               <span style={{ fontSize: 14.5, color: C.ink, flex: 1, minWidth: 0 }}>
@@ -3091,6 +3215,7 @@ export default function MealPlanner() {
                               </span>
                               {hasQty && (
                                 <button
+                                  className="stepper-btn"
                                   onClick={() => adjustPantryQty(item.id, -1)}
                                   aria-label="Decrease"
                                   style={{ width: 26, height: 26, borderRadius: "50%", background: C.paperDim, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
@@ -3104,6 +3229,7 @@ export default function MealPlanner() {
                                 </span>
                               )}
                               <button
+                                className="stepper-btn"
                                 onClick={() => adjustPantryQty(item.id, 1)}
                                 aria-label="Increase"
                                 style={{ width: 26, height: 26, borderRadius: "50%", background: C.paperDim, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
