@@ -2048,6 +2048,18 @@ export default function MealPlanner() {
   const [weekStart, setWeekStart] = useState(getMonday(new Date()));
   const [folderModalOpen, setFolderModalOpen] = useState(false);
   const [pantryInput, setPantryInput] = useState("");
+  const [pantryQty, setPantryQty] = useState("");
+  const [pantryUnit, setPantryUnit] = useState("");
+  const pantryFieldStyle = {
+    fontFamily: sans,
+    fontSize: 15,
+    padding: "10px 12px",
+    borderRadius: 10,
+    border: `1px solid ${C.line}`,
+    background: "#fff",
+    color: C.ink,
+    boxSizing: "border-box",
+  };
   const [confirmTarget, setConfirmTarget] = useState(null); // { type, id, label }
   const [recipeSearch, setRecipeSearch] = useState("");
   const [extraGroceryItems, setExtraGroceryItems] = useState({}); // weekKey -> [{id,name,qty,unit,category}]
@@ -2169,12 +2181,26 @@ export default function MealPlanner() {
       persistPantry([...pantry, item]);
     }
   }
-  function addPantryItem(text) {
+  function addPantryItem(text, qty = "", unit = "") {
     const trimmed = text.trim();
     if (!trimmed) return;
     const parsed = parseIngredientLine(trimmed);
     if (!parsed.name) return;
-    mergeIntoPantry({ name: parsed.name, qty: parsed.qty, unit: parsed.unit, category: guessCategory(parsed.name) });
+    // An amount typed into the name box ("2 cups flour") wins; otherwise use the qty/unit fields.
+    // A unit with no qty means nothing in the pantry, so it's dropped.
+    const typedAmount = parsed.qty !== "" || parsed.unit !== "";
+    const fieldQty = String(qty).trim();
+    mergeIntoPantry({
+      name: parsed.name,
+      qty: typedAmount ? parsed.qty : fieldQty,
+      unit: typedAmount ? parsed.unit : fieldQty ? unit : "",
+      category: guessCategory(parsed.name),
+    });
+  }
+  function submitPantryInput(text = pantryInput) {
+    addPantryItem(text, pantryQty, pantryUnit);
+    setPantryInput("");
+    setPantryQty("");
   }
   function buyGroceryItem(item) {
     const checkKey = `${weekKey}::${item.key}`;
@@ -3138,48 +3164,47 @@ export default function MealPlanner() {
             <p style={{ fontSize: 13.5, color: C.inkSoft, marginTop: 0, marginBottom: 12 }}>
               What you already have on hand. Anything listed here gets subtracted from your weekly grocery list. Swipe left on an item to remove it.
             </p>
-            <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+            <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
               <input
-                style={{
-                  flex: 1,
-                  minWidth: 0,
-                  fontFamily: sans,
-                  fontSize: 15,
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  border: `1px solid ${C.line}`,
-                  background: "#fff",
-                  color: C.ink,
-                  boxSizing: "border-box",
-                }}
-                placeholder="e.g. 2 cups flour, or just olive oil"
+                style={{ ...pantryFieldStyle, flex: 1, minWidth: 0 }}
+                placeholder="Item (e.g. chicken, olive oil)"
                 value={pantryInput}
                 onChange={(e) => setPantryInput(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    addPantryItem(pantryInput);
-                    setPantryInput("");
-                  }
+                  if (e.key === "Enter") submitPantryInput();
                 }}
               />
-              <Btn
-                variant="primary"
-                onClick={() => {
-                  addPantryItem(pantryInput);
-                  setPantryInput("");
-                }}
-              >
+              <Btn variant="primary" onClick={() => submitPantryInput()}>
                 Add
               </Btn>
+            </div>
+            <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+              <input
+                style={{ ...pantryFieldStyle, flex: "1 1 70px", minWidth: 70 }}
+                placeholder="Qty (e.g. 1 1/2)"
+                value={pantryQty}
+                onChange={(e) => setPantryQty(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") submitPantryInput();
+                }}
+              />
+              <select
+                style={{ ...pantryFieldStyle, flex: "1 1 85px", minWidth: 85 }}
+                value={pantryUnit}
+                onChange={(e) => setPantryUnit(e.target.value)}
+              >
+                {UNITS.map((u) => (
+                  <option key={u} value={u}>
+                    {u || "unit"}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <QuickAddChips
               pool={allKnownItems}
               query={pantryInput}
-              onPick={(name) => {
-                addPantryItem(name);
-                setPantryInput("");
-              }}
+              onPick={(name) => submitPantryInput(name)}
             />
 
             {pantryUndo.length > 0 && (
