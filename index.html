@@ -29,6 +29,7 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
+
 // ---------- design tokens ----------
 const C = {
   paper: "#F3E7D6",
@@ -53,7 +54,7 @@ const C = {
 const serif = "'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif";
 const sans = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
 
-const UNITS = ["", "g", "kg", "ml", "l", "tsp", "tbsp", "cup", "oz", "lb", "clove", "can", "pinch", "whole"];
+const UNITS = ["", "g", "kg", "ml", "l", "tsp", "tbsp", "cup", "oz", "lb", "clove", "can", "pinch", "whole", "portion"];
 const CATEGORIES = ["Produce", "Meat & seafood", "Dairy & eggs", "Bakery", "Frozen", "Pantry", "Spices & condiments", "Beverages", "Household", "Other"];
 const MEALS = [
   { id: "breakfast", label: "Breakfast" },
@@ -234,6 +235,7 @@ const UNIT_ALIASES = {
   cans: "can", can: "can",
   pinches: "pinch", pinch: "pinch",
   whole: "whole",
+  portions: "portion", portion: "portion",
 };
 const UNIT_REGEX = new RegExp("^(" + Object.keys(UNIT_ALIASES).sort((a, b) => b.length - a.length).join("|") + ")\\b\\.?", "i");
 
@@ -2174,14 +2176,10 @@ function MealPlanner() {
     });
   }
 
-  function addPantryItem(text) {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    const parsed = parseIngredientLine(trimmed);
-    if (!parsed.name) return;
-    const key = parsed.name.toLowerCase();
-    const unitKey = (parsed.unit || "").toLowerCase();
-    const newQtyNum = parseQty(parsed.qty);
+  function mergeIntoPantry({ name, qty, unit, category }) {
+    const key = name.toLowerCase();
+    const unitKey = (unit || "").toLowerCase();
+    const newQtyNum = typeof qty === "number" ? qty : parseQty(String(qty ?? ""));
     const existingIdx = pantry.findIndex((p) => p.name.toLowerCase() === key && (p.unit || "").toLowerCase() === unitKey);
     if (existingIdx >= 0) {
       const existing = pantry[existingIdx];
@@ -2194,13 +2192,36 @@ function MealPlanner() {
     } else {
       const item = {
         id: uid(),
-        name: parsed.name,
+        name,
         qty: !isNaN(newQtyNum) ? newQtyNum : "",
-        unit: parsed.unit || "",
-        category: guessCategory(parsed.name),
+        unit: unit || "",
+        category: category || guessCategory(name),
       };
       persistPantry([...pantry, item]);
     }
+  }
+  function addPantryItem(text) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const parsed = parseIngredientLine(trimmed);
+    if (!parsed.name) return;
+    mergeIntoPantry({ name: parsed.name, qty: parsed.qty, unit: parsed.unit, category: guessCategory(parsed.name) });
+  }
+  function buyGroceryItem(item) {
+    const checkKey = `${weekKey}::${item.key}`;
+    if (groceryChecked[checkKey]) {
+      const next = { ...groceryChecked };
+      delete next[checkKey];
+      persistGrocery(next);
+      return;
+    }
+    persistGrocery({ ...groceryChecked, [checkKey]: true });
+    mergeIntoPantry({
+      name: item.name,
+      qty: item.hasQty ? item.qty : NaN,
+      unit: item.unit,
+      category: item.category,
+    });
   }
   function adjustPantryQty(id, delta) {
     const current = pantry.find((p) => p.id === id);
@@ -3077,37 +3098,60 @@ function MealPlanner() {
                         >
                           <SwipeableRow onDelete={() => dismissGroceryItem(item.key, item.name)} deleteLabel="Skip">
                             <div
-                              onClick={() => persistGrocery({ ...groceryChecked, [checkKey]: !checked })}
                               style={{
                                 display: "flex",
                                 alignItems: "center",
                                 gap: 10,
                                 padding: "11px 13px",
-                                cursor: "pointer",
                               }}
                             >
-                              <div
-                                style={{
-                                  width: 20,
-                                  height: 20,
-                                  borderRadius: 5,
-                                  border: `1.5px solid ${checked ? C.herb : C.line}`,
-                                  background: checked ? C.herb : "transparent",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  flexShrink: 0,
-                                }}
-                              >
-                                {checked && <IconCheck size={13} color="#fff" />}
-                              </div>
-                              <span style={{ fontSize: 14.5, color: checked ? C.inkSoft : C.ink, textDecoration: checked ? "line-through" : "none" }}>
+                              <span style={{ flex: 1, minWidth: 0, fontSize: 14.5, color: checked ? C.inkSoft : C.ink, textDecoration: checked ? "line-through" : "none" }}>
                                 {item.hasQty ? `${formatQty(item.qty)} ${item.unit} ` : ""}
                                 {item.name}
                                 {item.pantryAdjusted && (
                                   <span style={{ fontSize: 12, color: C.inkSoft, fontStyle: "italic" }}> · have some in pantry</span>
                                 )}
                               </span>
+                              <button
+                                onClick={() => buyGroceryItem(item)}
+                                aria-label={checked ? "Bought — tap to undo" : "Mark bought and add to pantry"}
+                                title={checked ? "Bought — tap to undo" : "Mark bought and add to pantry"}
+                                style={{
+                                  width: 28,
+                                  height: 28,
+                                  borderRadius: 8,
+                                  border: `1.5px solid ${checked ? C.herb : C.line}`,
+                                  background: checked ? C.herb : "transparent",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  flexShrink: 0,
+                                  cursor: "pointer",
+                                  padding: 0,
+                                }}
+                              >
+                                <IconCheck size={15} color={checked ? "#fff" : C.herb} />
+                              </button>
+                              <button
+                                onClick={() => dismissGroceryItem(item.key, item.name)}
+                                aria-label="Skip this item"
+                                title="Skip this item"
+                                style={{
+                                  width: 28,
+                                  height: 28,
+                                  borderRadius: 8,
+                                  border: `1.5px solid ${C.line}`,
+                                  background: "transparent",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  flexShrink: 0,
+                                  cursor: "pointer",
+                                  padding: 0,
+                                }}
+                              >
+                                <IconX size={14} color={C.tomatoDeep} />
+                              </button>
                             </div>
                           </SwipeableRow>
                         </div>
